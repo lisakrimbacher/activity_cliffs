@@ -35,8 +35,8 @@ def smiles_to_ecfp(smiles, rad, nB):
 
 
 def initial_preprocessing(path, threshold, radius, nBits):
-    """
-    Reads the dataframe of the specified dataset, performs binarization on the activity labels, relabels activity cliff molecules and 
+    """ 
+    Reads the dataframe of the specified dataset, performs binarization on the activity labels and 
         computes the Extended Connectivity Fingerprint representation of the molecules.
 
     Parameters:
@@ -53,17 +53,37 @@ def initial_preprocessing(path, threshold, radius, nBits):
     df['active'] = df['y [pEC50/pKi]'].apply(
         lambda x: 1 if x > threshold else 0)
 
-    smiles_list = list(df['smiles'])
-    activity_list = list(df['active'])
-    cliffs = cliffs_van_tilborg_et_al.ActivityCliffs(
-        smiles=smiles_list, bioactivity=activity_list)
-    cliffs_binary = cliffs.get_cliff_molecules(return_smiles=False)
-    df['cliff_mol_binary'] = cliffs_binary
-
     df['ecfp'] = df['smiles'].apply(
         lambda x: smiles_to_ecfp(x, rad=radius, nB=nBits))
 
     return df
+
+def label_activity_cliffs(df_train, df_val, df_test):
+    """ TODO add real description
+    Labels molecules in the corresponding sets as activity cliffs.
+
+    Parameters:
+        - pandas.DataFrame: Train set.
+        - pandas.DataFrame: Validation set.
+        - pandas.DataFrame: Test set.
+
+    Returns:
+        tuple:
+            A tuple containing:
+                - pandas.DataFrame: Train set (reindexed).
+                - pandas.DataFrame: Validation set (reindexed).
+                - pandas.DataFrame: Test set (reindexed).
+    """
+
+    for df in [df_train, df_val, df_test]:
+        smiles_list = list(df['smiles'])
+        activity_list = list(df['active'])
+        cliffs = cliffs_van_tilborg_et_al.ActivityCliffs(
+            smiles=smiles_list, bioactivity=activity_list)
+        cliffs_binary = cliffs.get_cliff_molecules(return_smiles=False)
+        df['cliff_mol_binary'] = cliffs_binary
+
+    return df_train, df_val, df_test
 
 
 def split_data(df):
@@ -101,11 +121,9 @@ def reset_indices(df_train, df_val, df_test):
     Resets the indices of the given training, validation and test sets to go from 0 to n respectively.
 
     Parameters:
-        tuple:
-            A tuple containing:
-                - pandas.DataFrame: Train set.
-                - pandas.DataFrame: Validation set.
-                - pandas.DataFrame: Test set.
+        - pandas.DataFrame: Train set.
+        - pandas.DataFrame: Validation set.
+        - pandas.DataFrame: Test set.
 
     Returns:
         tuple:
@@ -125,11 +143,9 @@ def normalize_ecfps(df_train, df_val, df_test):
     Normalizes the ECFPs with Z-score normalization.
 
     Parameters:
-        tuple:
-            A tuple containing:
-                - pandas.DataFrame: Train set.
-                - pandas.DataFrame: Validation set.
-                - pandas.DataFrame: Test set.
+        - pandas.DataFrame: Train set.
+        - pandas.DataFrame: Validation set.
+        - pandas.DataFrame: Test set.
 
     Returns:
         tuple:
@@ -178,11 +194,21 @@ def preprocess_data(perform_add_preprocessing, path):
         df_train, df_val, df_test = split_data(df)
         df_train, df_val, df_test = normalize_ecfps(df_train, df_val, df_test)
         df_train, df_val, df_test = reset_indices(df_train, df_val, df_test)
+        df_train, df_val, df_test = label_activity_cliffs(df_train, df_val, df_test)
 
         similarities = cliffs_van_tilborg_et_al.moleculeace_similarity(
             df_train['smiles'])  # no self-similarity, i. e. similarity[i, i] == 0
-
         df_train['similar_molecules'] = [
+            np.where(similarities[i] == 1)[0] for i in range(similarities.shape[0])
+        ]
+        similarities = cliffs_van_tilborg_et_al.moleculeace_similarity(
+            df_val['smiles'])  # no self-similarity, i. e. similarity[i, i] == 0
+        df_val['similar_molecules'] = [
+            np.where(similarities[i] == 1)[0] for i in range(similarities.shape[0])
+        ]
+        similarities = cliffs_van_tilborg_et_al.moleculeace_similarity(
+            df_test['smiles'])  # no self-similarity, i. e. similarity[i, i] == 0
+        df_test['similar_molecules'] = [
             np.where(similarities[i] == 1)[0] for i in range(similarities.shape[0])
         ]
 
@@ -195,17 +221,21 @@ def preprocess_data(perform_add_preprocessing, path):
             lambda x: json.dumps(x.tolist()))
         df_train_save['ecfp'] = df_train_save['ecfp'].apply(
             lambda x: json.dumps(x.tolist()))
-        df_train_save['similar_molecules'] = df_train_save['similar_molecules'].apply(
-            lambda x: json.dumps(x.tolist() if isinstance(x, np.ndarray) else x))
         df_val_save['ecfp'] = df_val_save['ecfp'].apply(
             lambda x: json.dumps(x.tolist()))
         df_test_save['ecfp'] = df_test_save['ecfp'].apply(
             lambda x: json.dumps(x.tolist()))
+        df_train_save['similar_molecules'] = df_train_save['similar_molecules'].apply(
+            lambda x: json.dumps(x.tolist() if isinstance(x, np.ndarray) else x))
+        df_val_save['similar_molecules'] = df_train_save['similar_molecules'].apply(
+            lambda x: json.dumps(x.tolist() if isinstance(x, np.ndarray) else x))
+        df_test_save['similar_molecules'] = df_train_save['similar_molecules'].apply(
+            lambda x: json.dumps(x.tolist() if isinstance(x, np.ndarray) else x))
 
-        df_save.to_csv('data/df.csv', index=False)
-        df_train_save.to_csv('data/df_train.csv', index=False)
-        df_val_save.to_csv('data/df_val.csv', index=False)
-        df_test_save.to_csv('data/df_test.csv', index=False)
+        df_save.to_csv(r'data/df.csv', index=False)
+        df_train_save.to_csv(r'data/df_train.csv', index=False)
+        df_val_save.to_csv(r'data/df_val.csv', index=False)
+        df_test_save.to_csv(r'data/df_test.csv', index=False)
 
     else:
 
@@ -220,6 +250,10 @@ def preprocess_data(perform_add_preprocessing, path):
         df['ecfp'] = df['ecfp'].apply(str_to_array)
         df_train['ecfp'] = df_train['ecfp'].apply(str_to_array)
         df_train['similar_molecules'] = df_train['similar_molecules'].apply(
+            str_to_array)
+        df_val['similar_molecules'] = df_val['similar_molecules'].apply(
+            str_to_array)
+        df_test['similar_molecules'] = df_test['similar_molecules'].apply(
             str_to_array)
         df_val['ecfp'] = df_val['ecfp'].apply(str_to_array)
         df_test['ecfp'] = df_test['ecfp'].apply(str_to_array)
