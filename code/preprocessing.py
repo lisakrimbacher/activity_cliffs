@@ -227,9 +227,9 @@ def preprocess_data(perform_add_preprocessing, path):
             lambda x: json.dumps(x.tolist()))
         df_train_save['similar_molecules'] = df_train_save['similar_molecules'].apply(
             lambda x: json.dumps(x.tolist() if isinstance(x, np.ndarray) else x))
-        df_val_save['similar_molecules'] = df_train_save['similar_molecules'].apply(
+        df_val_save['similar_molecules'] = df_val_save['similar_molecules'].apply(
             lambda x: json.dumps(x.tolist() if isinstance(x, np.ndarray) else x))
-        df_test_save['similar_molecules'] = df_train_save['similar_molecules'].apply(
+        df_test_save['similar_molecules'] = df_test_save['similar_molecules'].apply(
             lambda x: json.dumps(x.tolist() if isinstance(x, np.ndarray) else x))
 
         df_save.to_csv(r'data/df.csv', index=False)

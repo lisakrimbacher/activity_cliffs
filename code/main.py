@@ -43,11 +43,11 @@ def build_dataset(batch_size, use_contrastive_learning=False):
     # no similar molecules extracted, since this dataset with just cliffs is only used for validation,
     # not training with triplet loss!
     train_set_cliffs = MoleculeACEDataset(
-        filtered_df_train['ecfp'], filtered_df_train['active'], filtered_df_train['cliff_mol_binary'])
+        filtered_df_train['ecfp'], filtered_df_train['active'])
     val_set_cliffs = MoleculeACEDataset(
-        filtered_df_val['ecfp'], filtered_df_val['active'], filtered_df_val['cliff_mol_binary'])
+        filtered_df_val['ecfp'], filtered_df_val['active'])
     test_set_cliffs = MoleculeACEDataset(
-        filtered_df_test['ecfp'], filtered_df_test['active'], filtered_df_test['cliff_mol_binary'])
+        filtered_df_test['ecfp'], filtered_df_test['active'])
 
     train_loader_cliffs = DataLoader(
         train_set_cliffs, shuffle=True, batch_size=batch_size)
@@ -58,14 +58,14 @@ def build_dataset(batch_size, use_contrastive_learning=False):
 
     if use_contrastive_learning:
         train_set = MoleculeACEDataset(
-            df_train['ecfp'], df_train['active'], df_train['cliff_mol_binary'], df_train['similar_molecules'])
+            df_train['ecfp'], df_train['active'], df_train['similar_molecules'])
     else:
         train_set = MoleculeACEDataset(
-            df_train['ecfp'], df_train['active'], df_train['cliff_mol_binary'])
+            df_train['ecfp'], df_train['active'])
     val_set = MoleculeACEDataset(
-        df_val['ecfp'], df_val['active'], df_val['cliff_mol_binary'])
+        df_val['ecfp'], df_val['active'])
     test_set = MoleculeACEDataset(
-        df_test['ecfp'], df_test['active'], df_test['cliff_mol_binary'])
+        df_test['ecfp'], df_test['active'])
 
     train_loader = DataLoader(train_set, shuffle=True, batch_size=batch_size)
     val_loader = DataLoader(val_set, shuffle=False, batch_size=batch_size)

@@ -30,7 +30,7 @@ class MoleculeACEDataset(Dataset):
             Returns the total number of samples in the dataset.
     """
 
-    def __init__(self, samples, targets, cliffs, similar_molecules=None):
+    def __init__(self, samples, targets, similar_molecules=None):
         super().__init__()
         samples_stacked = np.vstack(samples.values)
         self.samples = torch.tensor(samples_stacked, dtype=torch.float32)
