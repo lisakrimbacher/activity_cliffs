@@ -7,6 +7,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import matplotlib.pyplot as plt
 import random
 import pandas as pd
+import csv
 
 from model import MoleculeACEDataset, MLP, train_rf
 import preprocessing
@@ -349,7 +350,21 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
 #     print()
 
 
-def print_results(set_name, results, results_cliffs, results_non_cliffs):
+def print_results(set_name, results, results_cliffs, results_non_cliffs, save_to_csv, model_name=""):
+
+    if save_to_csv:
+        header = [
+            "Molecules",
+            "Loss_mean", "Loss_std",
+            "ROC-AUC_mean", "ROC-AUC_std",
+            "Accuracy_mean", "Accuracy_std",
+            "Precision_mean", "Precision_std",
+            "Recall_mean", "Recall_std",
+            "F1-Score_mean", "F1-Score_std",
+            "Balanced_Accuracy_mean", "Balanced_Accuracy_std",
+        ]
+
+        data = []
 
     for results_array, label in zip([results, results_non_cliffs, results_cliffs], ["all molecules", "non-cliff molecules", "cliff molecules"]):
         mean = np.mean(results_array, axis=0)
@@ -372,27 +387,25 @@ def print_results(set_name, results, results_cliffs, results_non_cliffs):
 
         print()
 
-        # print(f"Performance on {set_name} set (cliff molecules): ")
-        # print(f"- {set_name}-Loss: mean={mean[7]:.4f} std={std[7]:.4f}")
-        # print(f"- ROC AUC: mean={mean[12]:.4f} std={std[12]:.4f}")
-        # print(f"- Accuracy: mean={mean[8]:.4f} std={std[8]:.4f}")
-        # print(f"- Precision: mean={mean[9]:.4f} std={std[9]:.4f}")
-        # print(f"- Recall: mean={mean[10]:.4f} std={std[10]:.4f}")
-        # print(f"- F1-Score: mean={mean[11]:.4f} std={std[11]:.4f}")
-        # print(f"- Balanced Accuracy: mean={mean[13]:.4f} std={std[13]:.4f}")
-        # print()
+        if save_to_csv:
+            data.append([
+                label,
+                mean['Loss'], std['Loss'],
+                mean['ROC-AUC'], std['ROC-AUC'],
+                mean['Accuracy'], std['Accuracy'],
+                mean['Precision'], std['Precision'],
+                mean['Recall'], std['Recall'],
+                mean['F1-Score'], std['F1-Score'],
+                mean['Balanced Accuracy'], std['Balanced Accuracy'],
+            ])
 
-        # print(f"Difference between all molecules and activity cliffs: ")
-        # print(f"- {set_name}-Loss: {(mean[7] - mean[0]):.4f}")
-        # print(f"- ROC AUC: {(mean[5] - mean[12]):.4f}")
-        # print(f"- Accuracy: {(mean[1] - mean[8]):.4f}")
-        # print(f"- Precision: {(mean[2] - mean[9]):.4f}")
-        # print(f"- Recall: {(mean[3] - mean[10]):.4f}")
-        # print(f"- F1-Score: {(mean[4] - mean[11]):.4f}")
-        # print(f"- Balanced Accuracy: {(mean[6] - mean[13]):.4f}")
+        if save_to_csv:
+            with open(f"data/Results_{set_name}_{model_name}.csv", mode="w", newline="") as csv_file:
+                writer = csv.writer(csv_file)
+                writer.writerow(header)  # Write the header
+                writer.writerows(data)
 
-        # print()
-        # print(results)
+        # TODO: save to csv-file(s)
 
 
 def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train_loader=False):
@@ -464,10 +477,11 @@ perform_add_preprocessing = False
 df, df_train, df_val, df_test = preprocessing.preprocess_data(
     perform_add_preprocessing, path="data/CHEMBL234_Ki.csv")
 
-train_eval_rf = True
-load_model = None  # choose from: 'MLP', 'MLP Triplet Manhattan', 'MLP Triplet Cosine', None
-use_contrastive_learning = False
-use_cosine_sim = False
+train_eval_rf = False
+# choose from: 'MLP', 'MLP Triplet Manhattan', 'MLP Triplet Cosine', None
+load_model = None
+use_contrastive_learning = True
+use_cosine_sim = True
 
 train_losses_total = []
 train_triplet_losses = []
@@ -477,7 +491,7 @@ val_losses = []
 
 if __name__ == "__main__":
 
-    configs = [
+    configs = [  # TODO: check if configurations are right like this, i.e. if the first is for MLP BCE etc.
         {
             'optimizer': 'adam',
             'epochs': 16,
@@ -516,7 +530,16 @@ if __name__ == "__main__":
         }
     ]
 
-    config_dict = configs[0]
+    if (not load_model):
+        if (use_contrastive_learning and use_cosine_sim): 
+            model_name = "MLP_Cosine"
+            config_dict = configs[2]
+        elif (use_contrastive_learning and not use_cosine_sim): 
+            model_name = "MLP_Manhattan"
+            config_dict = configs[1]
+        else:  
+            model_name = "MLP_BCE"
+            config_dict = configs[0]
 
     val_results_list = []
     val_cliffs_results_list = []
@@ -543,6 +566,7 @@ if __name__ == "__main__":
         train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = build_dataset(
             config_dict['batch_size'], use_contrastive_learning=False)
         if train_eval_rf:
+            model_name = "RF"
             # val_loss, val_accuracy, val_precision, val_recall, val_f1, val_roc_auc, val_balanced_acc, \
             #     val_loss_cliffs, val_accuracy_cliffs, val_precision_cliffs, val_recall_cliffs, val_f1_cliffs, val_roc_auc_cliffs, val_balanced_acc_cliffs, \
             #     val_loss_non_cliffs, val_accuracy_non_cliffs, val_precision_non_cliffs, val_recall_non_cliffs, val_f1_non_cliffs, val_roc_auc_non_cliffs, val_balanced_acc_non_cliffs, \
@@ -598,10 +622,10 @@ if __name__ == "__main__":
         test_non_cliffs_results_list, ignore_index=True)
 
     print_results("Validation", cumulated_val_results,
-                  cumulated_val_cliffs_results, cumulated_val_non_cliffs_results)
+                  cumulated_val_cliffs_results, cumulated_val_non_cliffs_results, save_to_csv=True, model_name=model_name)
     print()
     print_results("Test", cumulated_test_results,
-                  cumulated_test_cliffs_results, cumulated_test_non_cliffs_results)
+                  cumulated_test_cliffs_results, cumulated_test_non_cliffs_results, save_to_csv=True, model_name=model_name)
 
     if load_model is None and not train_eval_rf:
         fig, axes = plt.subplots(2, 2, figsize=(10, 7))
