@@ -6,6 +6,7 @@ import torch.nn as nn
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, balanced_accuracy_score
 import matplotlib.pyplot as plt
 import random
+import pandas as pd
 
 from model import MoleculeACEDataset, MLP, train_rf
 import preprocessing
@@ -36,18 +37,22 @@ def build_dataset(batch_size, use_contrastive_learning=False):
                 - torch.utils.data.DataLoader: DataLoader for test set (cliff molecules).
     """
 
-    filtered_df_train = df_train[df_train['cliff_mol_binary'] == 1]
-    filtered_df_val = df_val[df_val['cliff_mol_binary'] == 1]
-    filtered_df_test = df_test[df_test['cliff_mol_binary'] == 1]
+    cliff_df_train = df_train[df_train['cliff_mol_binary'] == 1]
+    cliff_df_val = df_val[df_val['cliff_mol_binary'] == 1]
+    cliff_df_test = df_test[df_test['cliff_mol_binary'] == 1]
 
-    # no similar molecules extracted, since this dataset with just cliffs is only used for validation,
+    non_cliff_df_train = df_train[df_train['cliff_mol_binary'] == 0]
+    non_cliff_df_val = df_val[df_val['cliff_mol_binary'] == 0]
+    non_cliff_df_test = df_test[df_test['cliff_mol_binary'] == 0]
+
+    # no similar molecules extracted, since these datasets with just cliffs are only used for validation,
     # not training with triplet loss!
     train_set_cliffs = MoleculeACEDataset(
-        filtered_df_train['ecfp'], filtered_df_train['active'])
+        cliff_df_train['ecfp'], cliff_df_train['active'])
     val_set_cliffs = MoleculeACEDataset(
-        filtered_df_val['ecfp'], filtered_df_val['active'])
+        cliff_df_val['ecfp'], cliff_df_val['active'])
     test_set_cliffs = MoleculeACEDataset(
-        filtered_df_test['ecfp'], filtered_df_test['active'])
+        cliff_df_test['ecfp'], cliff_df_test['active'])
 
     train_loader_cliffs = DataLoader(
         train_set_cliffs, shuffle=True, batch_size=batch_size)
@@ -55,6 +60,20 @@ def build_dataset(batch_size, use_contrastive_learning=False):
         val_set_cliffs, shuffle=False, batch_size=batch_size)
     test_loader_cliffs = DataLoader(
         test_set_cliffs, shuffle=False, batch_size=batch_size)
+
+    train_set_non_cliffs = MoleculeACEDataset(
+        non_cliff_df_train['ecfp'], non_cliff_df_train['active'])
+    val_set_non_cliffs = MoleculeACEDataset(
+        non_cliff_df_val['ecfp'], non_cliff_df_val['active'])
+    test_set_non_cliffs = MoleculeACEDataset(
+        non_cliff_df_test['ecfp'], non_cliff_df_test['active'])
+
+    train_loader_non_cliffs = DataLoader(
+        train_set_non_cliffs, shuffle=True, batch_size=batch_size)
+    val_loader_non_cliffs = DataLoader(
+        val_set_non_cliffs, shuffle=False, batch_size=batch_size)
+    test_loader_non_cliffs = DataLoader(
+        test_set_non_cliffs, shuffle=False, batch_size=batch_size)
 
     if use_contrastive_learning:
         train_set = MoleculeACEDataset(
@@ -71,7 +90,7 @@ def build_dataset(batch_size, use_contrastive_learning=False):
     val_loader = DataLoader(val_set, shuffle=False, batch_size=batch_size)
     test_loader = DataLoader(test_set, shuffle=False, batch_size=batch_size)
 
-    return train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs
+    return train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs
 
 
 def build_network(n_hidden_layers=2, n_hidden_units=1024, activation_function=nn.ReLU, input_dropout=0.25,
@@ -171,17 +190,15 @@ def train(config, use_contrastive_learning=False, use_cosine_sim=False, seed=12)
 
     for epoch in tqdm(range(config['epochs'])):
         if use_contrastive_learning:
-            train_loss, val_loss, accuracy, precision, recall, f1, roc_auc, balanced_acc, \
-                val_loss_cliffs, accuracy_cliffs, precision_cliffs, recall_cliffs, f1_cliffs, \
-                roc_auc_cliffs, balanced_acc_cliffs = \
+            train_results, val_results, val_cliffs_results, val_non_cliffs_results = \
                 train_epoch(epoch, network, loaders, optimizer,
                             alpha=config['alpha'], use_contrastive_learning=use_contrastive_learning, use_cosine_sim=use_cosine_sim, seed=seed)
         else:
-            train_loss, val_loss, accuracy, precision, recall, f1, roc_auc, balanced_acc, \
-                val_loss_cliffs, accuracy_cliffs, precision_cliffs, recall_cliffs, f1_cliffs, \
-                roc_auc_cliffs, balanced_acc_cliffs = \
+            train_results, val_results, val_cliffs_results, val_non_cliffs_results = \
                 train_epoch(epoch, network, loaders, optimizer,
                             use_contrastive_learning=use_contrastive_learning, seed=seed)
+
+        val_loss = val_results["Loss"][0]
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -226,7 +243,7 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
     torch.manual_seed(seed + epoch_id)
     torch.random.manual_seed(seed + epoch_id)
 
-    train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs = loaders
+    train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = loaders
 
     network.train()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -286,89 +303,97 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
         loss.backward()
         optimizer.step()
 
-    val_loss, accuracy, precision, recall, f1, roc_auc, balanced_acc = compute_metrics(
-        val_loader, network)
-    val_loss_cliffs, accuracy_cliffs, precision_cliffs, recall_cliffs, f1_cliffs, roc_auc_cliffs, balanced_acc_cliffs = \
-        compute_metrics(val_loader_cliffs, network)
-    train_loss, _, _, _, _, _, _ = compute_metrics(
+    train_results = compute_metrics(
         train_loader, network, train_loader=True)
+    val_results = compute_metrics(
+        val_loader, network)
+    val_cliffs_results = \
+        compute_metrics(val_loader_cliffs, network)
+    val_non_cliffs_results = \
+        compute_metrics(val_loader_non_cliffs, network)
 
-    val_losses.append(val_loss)
+    val_losses.append(val_results["Loss"][0])
 
-    return train_loss, val_loss, accuracy, precision, recall, f1, roc_auc, balanced_acc, val_loss_cliffs, accuracy_cliffs, precision_cliffs, recall_cliffs, f1_cliffs, roc_auc_cliffs, balanced_acc_cliffs
-
-
-def print_results(set_name, loss, accuracy, precision, recall, f1, roc_auc, balanced_acc, loss_cliffs, accuracy_cliffs,
-                  precision_cliffs, recall_cliffs, f1_cliffs, roc_auc_cliffs, balanced_acc_cliffs):
-    """
-    Prints given metrics.
-
-    Parameters:
-        set_name (string): Name of the evaluated dataset, e.g. 'Validation' or 'Test'.
-        various metrics (float)
-    """
-    print()
-
-    print(f"Performance on {set_name} set (all molecules): ")
-    print(f"- {set_name}-Loss: ", loss)
-    print("- ROC AUC: ", roc_auc)
-    print("- Accuracy: ", accuracy)
-    print("- Precision: ", precision)
-    print("- Recall: ", recall)
-    print("- F1-Score: ", f1)
-    print("- Balanced Accuracy: ", balanced_acc)
-    print()
-
-    print(f"Performance on {set_name} set (cliff molecules): ")
-    print(f"- {set_name}-Loss: ", loss_cliffs)
-    print("- ROC AUC: ", roc_auc_cliffs)
-    print("- Accuracy: ", accuracy_cliffs)
-    print("- Precision: ", precision_cliffs)
-    print("- Recall: ", recall_cliffs)
-    print("- F1-Score: ", f1_cliffs)
-    print("- Balanced Accuracy: ", balanced_acc_cliffs)
-    print()
-
-def print_results_array(set_name, results):
-
-    mean = np.mean(results, axis=0)
-    std = np.std(results, axis=0)
-
-    # test_loss, test_accuracy, test_precision, test_recall, test_f1, test_roc_auc, test_balanced_acc, test_loss_cliffs,
-    #             test_accuracy_cliffs, test_precision_cliffs, test_recall_cliffs, test_f1_cliffs, test_roc_auc_cliffs, test_balanced_acc_cliffs
-
-    print(f"Performance on {set_name} set (all molecules): ")
-    print(f"- {set_name}-Loss: mean={mean[0]:.4f} std={std[0]:.4f}")
-    print(f"- ROC AUC: mean={mean[5]:.4f} std={std[5]:.4f}")
-    print(f"- Accuracy: mean={mean[1]:.4f} std={std[1]:.4f}")
-    print(f"- Precision: mean={mean[2]:.4f} std={std[2]:.4f}")
-    print(f"- Recall: mean={mean[3]:.4f} std={std[3]:.4f}")
-    print(f"- F1-Score: mean={mean[4]:.4f} std={std[4]:.4f}")
-    print(f"- Balanced Accuracy: mean={mean[6]:.4f} std={std[6]:.4f}")
-    print()
-
-    print(f"Performance on {set_name} set (cliff molecules): ")
-    print(f"- {set_name}-Loss: mean={mean[7]:.4f} std={std[7]:.4f}")
-    print(f"- ROC AUC: mean={mean[12]:.4f} std={std[12]:.4f}")
-    print(f"- Accuracy: mean={mean[8]:.4f} std={std[8]:.4f}")
-    print(f"- Precision: mean={mean[9]:.4f} std={std[9]:.4f}")
-    print(f"- Recall: mean={mean[10]:.4f} std={std[10]:.4f}")
-    print(f"- F1-Score: mean={mean[11]:.4f} std={std[11]:.4f}")
-    print(f"- Balanced Accuracy: mean={mean[13]:.4f} std={std[13]:.4f}")
-    print()
-
-    print(f"Difference between all molecules and activity cliffs: ")
-    print(f"- {set_name}-Loss: {(mean[7] - mean[0]):.4f}")
-    print(f"- ROC AUC: {(mean[5] - mean[12]):.4f}")
-    print(f"- Accuracy: {(mean[1] - mean[8]):.4f}")
-    print(f"- Precision: {(mean[2] - mean[9]):.4f}")
-    print(f"- Recall: {(mean[3] - mean[10]):.4f}")
-    print(f"- F1-Score: {(mean[4] - mean[11]):.4f}")
-    print(f"- Balanced Accuracy: {(mean[6] - mean[13]):.4f}")
+    return train_results, val_results, val_cliffs_results, val_non_cliffs_results
 
 
-    print()
-    print(results)
+# def print_results(set_name, loss, accuracy, precision, recall, f1, roc_auc, balanced_acc, loss_cliffs, accuracy_cliffs,
+#                   precision_cliffs, recall_cliffs, f1_cliffs, roc_auc_cliffs, balanced_acc_cliffs):
+#     """
+#     Prints given metrics.
+
+#     Parameters:
+#         set_name (string): Name of the evaluated dataset, e.g. 'Validation' or 'Test'.
+#         various metrics (float)
+#     """
+#     print()
+
+#     print(f"Performance on {set_name} set (all molecules): ")
+#     print(f"- {set_name}-Loss: ", loss)
+#     print("- ROC AUC: ", roc_auc)
+#     print("- Accuracy: ", accuracy)
+#     print("- Precision: ", precision)
+#     print("- Recall: ", recall)
+#     print("- F1-Score: ", f1)
+#     print("- Balanced Accuracy: ", balanced_acc)
+#     print()
+
+#     print(f"Performance on {set_name} set (cliff molecules): ")
+#     print(f"- {set_name}-Loss: ", loss_cliffs)
+#     print("- ROC AUC: ", roc_auc_cliffs)
+#     print("- Accuracy: ", accuracy_cliffs)
+#     print("- Precision: ", precision_cliffs)
+#     print("- Recall: ", recall_cliffs)
+#     print("- F1-Score: ", f1_cliffs)
+#     print("- Balanced Accuracy: ", balanced_acc_cliffs)
+#     print()
+
+
+def print_results(set_name, results, results_cliffs, results_non_cliffs):
+
+    for results_array, label in zip([results, results_non_cliffs, results_cliffs], ["all molecules", "non-cliff molecules", "cliff molecules"]):
+        mean = np.mean(results_array, axis=0)
+        std = np.std(results_array, axis=0)
+
+        print(f"Performance on {set_name} set ({label}):")
+        print(
+            f"- {set_name}-Loss: mean={mean['Loss']:.4f} std={std['Loss']:.4f}")
+        print(
+            f"- ROC AUC: mean={mean['ROC-AUC']:.4f} std={std['ROC-AUC']:.4f}")
+        print(
+            f"- Accuracy: mean={mean['Accuracy']:.4f} std={std['Accuracy']:.4f}")
+        print(
+            f"- Precision: mean={mean['Precision']:.4f} std={std['Precision']:.4f}")
+        print(f"- Recall: mean={mean['Recall']:.4f} std={std['Recall']:.4f}")
+        print(
+            f"- F1-Score: mean={mean['F1-Score']:.4f} std={std['F1-Score']:.4f}")
+        print(
+            f"- Balanced Accuracy: mean={mean['Balanced Accuracy']:.4f} std={std['Balanced Accuracy']:.4f}")
+
+        print()
+
+        # print(f"Performance on {set_name} set (cliff molecules): ")
+        # print(f"- {set_name}-Loss: mean={mean[7]:.4f} std={std[7]:.4f}")
+        # print(f"- ROC AUC: mean={mean[12]:.4f} std={std[12]:.4f}")
+        # print(f"- Accuracy: mean={mean[8]:.4f} std={std[8]:.4f}")
+        # print(f"- Precision: mean={mean[9]:.4f} std={std[9]:.4f}")
+        # print(f"- Recall: mean={mean[10]:.4f} std={std[10]:.4f}")
+        # print(f"- F1-Score: mean={mean[11]:.4f} std={std[11]:.4f}")
+        # print(f"- Balanced Accuracy: mean={mean[13]:.4f} std={std[13]:.4f}")
+        # print()
+
+        # print(f"Difference between all molecules and activity cliffs: ")
+        # print(f"- {set_name}-Loss: {(mean[7] - mean[0]):.4f}")
+        # print(f"- ROC AUC: {(mean[5] - mean[12]):.4f}")
+        # print(f"- Accuracy: {(mean[1] - mean[8]):.4f}")
+        # print(f"- Precision: {(mean[2] - mean[9]):.4f}")
+        # print(f"- Recall: {(mean[3] - mean[10]):.4f}")
+        # print(f"- F1-Score: {(mean[4] - mean[11]):.4f}")
+        # print(f"- Balanced Accuracy: {(mean[6] - mean[13]):.4f}")
+
+        # print()
+        # print(results)
+
 
 def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train_loader=False):
     """
@@ -406,7 +431,7 @@ def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train
         outputs_total = torch.cat(outputs_total, dim=0)
         targets_total = torch.cat(targets_total, dim=0)
 
-        val_loss = loss_function(outputs_total, targets_total)
+        loss = loss_function(outputs_total, targets_total)
 
         probabilities = torch.sigmoid(outputs_total)
         predictions = (probabilities >= 0.5).float()
@@ -422,14 +447,24 @@ def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train
         roc_auc = roc_auc_score(targets_np, probabilities_np)
         balanced_acc = balanced_accuracy_score(targets_np, predictions_np)
 
-        return val_loss.item(), accuracy, precision, recall, f1, roc_auc, balanced_acc
+        results = {
+            "Loss": loss.item(),
+            "Accuracy": accuracy,
+            "Precision": precision,
+            "Recall": recall,
+            "F1-Score": f1,
+            "ROC-AUC": roc_auc,
+            "Balanced Accuracy": balanced_acc
+        }
+
+        return pd.DataFrame([results])
 
 
 perform_add_preprocessing = False
 df, df_train, df_val, df_test = preprocessing.preprocess_data(
     perform_add_preprocessing, path="data/CHEMBL234_Ki.csv")
 
-train_eval_rf = False
+train_eval_rf = True
 load_model = None  # choose from: 'MLP', 'MLP Triplet Manhattan', 'MLP Triplet Cosine', None
 use_contrastive_learning = False
 use_cosine_sim = False
@@ -482,9 +517,15 @@ if __name__ == "__main__":
     ]
 
     config_dict = configs[0]
-    results = []
 
-    for current_seed in [12]:#, 68, 94, 39, 7]:
+    val_results_list = []
+    val_cliffs_results_list = []
+    val_non_cliffs_results_list = []
+    test_results_list = []
+    test_cliffs_results_list = []
+    test_non_cliffs_results_list = []
+
+    for current_seed in [12, 68, 94, 39, 7]:
 
         # config_dict = {
         #     'optimizer': 'adam',
@@ -499,21 +540,24 @@ if __name__ == "__main__":
         #     'alpha': 0.0
         # }
 
-        train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs = build_dataset(
+        train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = build_dataset(
             config_dict['batch_size'], use_contrastive_learning=False)
         if train_eval_rf:
-            val_loss, val_accuracy, val_precision, val_recall, val_f1, val_roc_auc, val_balanced_acc, \
-                val_loss_cliffs, val_accuracy_cliffs, val_precision_cliffs, val_recall_cliffs, val_f1_cliffs, val_roc_auc_cliffs, val_balanced_acc_cliffs, \
-                test_loss, test_accuracy, test_precision, test_recall, test_f1, test_roc_auc, test_balanced_acc, \
-                test_loss_cliffs, test_accuracy_cliffs, test_precision_cliffs, test_recall_cliffs, test_f1_cliffs, test_roc_auc_cliffs, test_balanced_acc_cliffs = \
-                train_rf(train_loader, val_loader, test_loader,
-                        train_loader_cliffs, val_loader_cliffs, test_loader_cliffs)
+            # val_loss, val_accuracy, val_precision, val_recall, val_f1, val_roc_auc, val_balanced_acc, \
+            #     val_loss_cliffs, val_accuracy_cliffs, val_precision_cliffs, val_recall_cliffs, val_f1_cliffs, val_roc_auc_cliffs, val_balanced_acc_cliffs, \
+            #     val_loss_non_cliffs, val_accuracy_non_cliffs, val_precision_non_cliffs, val_recall_non_cliffs, val_f1_non_cliffs, val_roc_auc_non_cliffs, val_balanced_acc_non_cliffs, \
+            #     test_loss, test_accuracy, test_precision, test_recall, test_f1, test_roc_auc, test_balanced_acc, \
+            #     test_loss_cliffs, test_accuracy_cliffs, test_precision_cliffs, test_recall_cliffs, test_f1_cliffs, test_roc_auc_cliffs, test_balanced_acc_cliffs, \
+            #     test_loss_non_cliffs, test_accuracy_non_cliffs, test_precision_non_cliffs, test_recall_non_cliffs, test_f1_non_cliffs, test_roc_auc_non_cliffs, test_balanced_acc_non_cliffs = \
+            val_results, val_cliffs_results, val_non_cliffs_results, test_results, test_cliffs_results, test_non_cliffs_results = train_rf(train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs,
+                                                                                                                                           test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs)
         else:
             if load_model is None:
                 network = train(
                     config_dict, use_contrastive_learning=use_contrastive_learning, use_cosine_sim=use_cosine_sim, seed=current_seed)
             elif load_model == 'MLP':
-                network = torch.load('models/baseline_mlp.pt', weights_only=False)
+                network = torch.load(
+                    'models/baseline_mlp.pt', weights_only=False)
             elif load_model == 'MLP Triplet Manhattan':
                 network = torch.load(
                     'models/mlp_triplet_manhattan.pt', weights_only=False)
@@ -523,24 +567,41 @@ if __name__ == "__main__":
             else:
                 raise Exception("invalid flag combination")
 
-            val_loss, val_accuracy, val_precision, val_recall, val_f1, val_roc_auc, val_balanced_acc = \
-                compute_metrics(val_loader, network)
-            val_loss_cliffs, val_accuracy_cliffs, val_precision_cliffs, val_recall_cliffs, val_f1_cliffs, val_roc_auc_cliffs, val_balanced_acc_cliffs = \
-                compute_metrics(val_loader_cliffs, network)
-            test_loss, test_accuracy, test_precision, test_recall, test_f1, test_roc_auc, test_balanced_acc = \
-                compute_metrics(test_loader, network)
-            test_loss_cliffs, test_accuracy_cliffs, test_precision_cliffs, test_recall_cliffs, test_f1_cliffs, test_roc_auc_cliffs, test_balanced_acc_cliffs = \
-                compute_metrics(test_loader_cliffs, network)
-            
-        results.append(np.array([test_loss, test_accuracy, test_precision, test_recall, test_f1, test_roc_auc, test_balanced_acc, test_loss_cliffs,
-                test_accuracy_cliffs, test_precision_cliffs, test_recall_cliffs, test_f1_cliffs, test_roc_auc_cliffs, test_balanced_acc_cliffs]))
+            val_results = compute_metrics(val_loader, network)
+            val_cliffs_results = compute_metrics(val_loader_cliffs, network)
+            val_non_cliffs_results = compute_metrics(
+                val_loader_non_cliffs, network)
 
-    # print_results("Validation", val_loss, val_accuracy, val_precision, val_recall, val_f1, val_roc_auc, val_balanced_acc, val_loss_cliffs,
-    #             val_accuracy_cliffs, val_precision_cliffs, val_recall_cliffs, val_f1_cliffs, val_roc_auc_cliffs, val_balanced_acc_cliffs)
-    # print_results("Test", test_loss, test_accuracy, test_precision, test_recall, test_f1, test_roc_auc, test_balanced_acc, test_loss_cliffs,
-    #             test_accuracy_cliffs, test_precision_cliffs, test_recall_cliffs, test_f1_cliffs, test_roc_auc_cliffs, test_balanced_acc_cliffs)
-    
-    print_results_array("Test", np.array(results))
+            test_results = compute_metrics(test_loader, network)
+            test_cliffs_results = compute_metrics(test_loader_cliffs, network)
+            test_non_cliffs_results = compute_metrics(
+                test_loader_non_cliffs, network)
+
+        val_results_list.append(val_results)
+        val_cliffs_results_list.append(val_cliffs_results)
+        val_non_cliffs_results_list.append(val_non_cliffs_results)
+
+        test_results_list.append(test_results)
+        test_cliffs_results_list.append(test_cliffs_results)
+        test_non_cliffs_results_list.append(test_non_cliffs_results)
+
+    cumulated_val_results = pd.concat(val_results_list, ignore_index=True)
+    cumulated_val_cliffs_results = pd.concat(
+        val_cliffs_results_list, ignore_index=True)
+    cumulated_val_non_cliffs_results = pd.concat(
+        val_non_cliffs_results_list, ignore_index=True)
+
+    cumulated_test_results = pd.concat(test_results_list, ignore_index=True)
+    cumulated_test_cliffs_results = pd.concat(
+        test_cliffs_results_list, ignore_index=True)
+    cumulated_test_non_cliffs_results = pd.concat(
+        test_non_cliffs_results_list, ignore_index=True)
+
+    print_results("Validation", cumulated_val_results,
+                  cumulated_val_cliffs_results, cumulated_val_non_cliffs_results)
+    print()
+    print_results("Test", cumulated_test_results,
+                  cumulated_test_cliffs_results, cumulated_test_non_cliffs_results)
 
     if load_model is None and not train_eval_rf:
         fig, axes = plt.subplots(2, 2, figsize=(10, 7))

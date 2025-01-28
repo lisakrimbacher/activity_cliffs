@@ -6,6 +6,7 @@ import torch.nn as nn
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, balanced_accuracy_score, log_loss
 from sklearn.ensemble import RandomForestClassifier
 import random
+import pandas as pd
 
 # np.random.seed(12)
 # random.seed(12)
@@ -190,7 +191,7 @@ def compute_rf_metrics(rf, X_np, y_np):
     return loss, accuracy, precision, recall, f1, roc_auc, balanced_acc
 
 
-def train_rf(train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs):
+def train_rf(train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs):
     """
     Trains and evaluates a Random Forest with 100 trees.
 
@@ -219,6 +220,11 @@ def train_rf(train_loader, val_loader, test_loader, train_loader_cliffs, val_loa
         val_loader_cliffs)
     val_loss_cliffs, val_accuracy_cliffs, val_precision_cliffs, val_recall_cliffs, val_f1_cliffs, val_roc_auc_cliffs, val_balanced_acc_cliffs = \
         compute_rf_metrics(rf, val_X_np_cliffs, val_y_np_cliffs)
+    
+    val_X_np_non_cliffs, val_y_np_non_cliffs = concatenate_dataloader(
+        val_loader_non_cliffs)
+    val_loss_non_cliffs, val_accuracy_non_cliffs, val_precision_non_cliffs, val_recall_non_cliffs, val_f1_non_cliffs, val_roc_auc_non_cliffs, val_balanced_acc_non_cliffs = \
+        compute_rf_metrics(rf, val_X_np_non_cliffs, val_y_np_non_cliffs)
 
     test_X_np, test_y_np = concatenate_dataloader(test_loader)
     test_loss, test_accuracy, test_precision, test_recall, test_f1, test_roc_auc, test_balanced_acc = compute_rf_metrics(
@@ -228,8 +234,78 @@ def train_rf(train_loader, val_loader, test_loader, train_loader_cliffs, val_loa
         test_loader_cliffs)
     test_loss_cliffs, test_accuracy_cliffs, test_precision_cliffs, test_recall_cliffs, test_f1_cliffs, test_roc_auc_cliffs, test_balanced_acc_cliffs = compute_rf_metrics(
         rf, test_X_np_cliffs, test_y_np_cliffs)
+    
+    test_X_np_non_cliffs, test_y_np_non_cliffs = concatenate_dataloader(
+        test_loader_non_cliffs)
+    test_loss_non_cliffs, test_accuracy_non_cliffs, test_precision_non_cliffs, test_recall_non_cliffs, test_f1_non_cliffs, test_roc_auc_non_cliffs, test_balanced_acc_non_cliffs = compute_rf_metrics(
+        rf, test_X_np_non_cliffs, test_y_np_non_cliffs)
+    
 
-    return val_loss, val_accuracy, val_precision, val_recall, val_f1, val_roc_auc, val_balanced_acc, \
-        val_loss_cliffs, val_accuracy_cliffs, val_precision_cliffs, val_recall_cliffs, val_f1_cliffs, val_roc_auc_cliffs, val_balanced_acc_cliffs, \
-        test_loss, test_accuracy, test_precision, test_recall, test_f1, test_roc_auc, test_balanced_acc, \
-        test_loss_cliffs, test_accuracy_cliffs, test_precision_cliffs, test_recall_cliffs, test_f1_cliffs, test_roc_auc_cliffs, test_balanced_acc_cliffs
+    val_results = {
+            "Loss": val_loss,
+            "Accuracy": val_accuracy,
+            "Precision": val_precision,
+            "Recall": val_recall,
+            "F1-Score": val_f1,
+            "ROC-AUC": val_roc_auc,
+            "Balanced Accuracy": val_balanced_acc
+        }
+    
+    val_cliffs_results = {
+            "Loss": val_loss_cliffs,
+            "Accuracy": val_accuracy_cliffs,
+            "Precision": val_precision_cliffs,
+            "Recall": val_recall_cliffs,
+            "F1-Score": val_f1_cliffs,
+            "ROC-AUC": val_roc_auc_cliffs,
+            "Balanced Accuracy": val_balanced_acc_cliffs
+        }
+    
+    val_non_cliffs_results = {
+            "Loss": val_loss_non_cliffs,
+            "Accuracy": val_accuracy_non_cliffs,
+            "Precision": val_precision_non_cliffs,
+            "Recall": val_recall_non_cliffs,
+            "F1-Score": val_f1_non_cliffs,
+            "ROC-AUC": val_roc_auc_non_cliffs,
+            "Balanced Accuracy": val_balanced_acc_non_cliffs
+        }
+    
+    test_results = {
+            "Loss": test_loss,
+            "Accuracy": test_accuracy,
+            "Precision": test_precision,
+            "Recall": test_recall,
+            "F1-Score": test_f1,
+            "ROC-AUC": test_roc_auc,
+            "Balanced Accuracy": test_balanced_acc
+        }
+    
+    test_cliffs_results = {
+            "Loss": test_loss_cliffs,
+            "Accuracy": test_accuracy_cliffs,
+            "Precision": test_precision_cliffs,
+            "Recall": test_recall_cliffs,
+            "F1-Score": test_f1_cliffs,
+            "ROC-AUC": test_roc_auc_cliffs,
+            "Balanced Accuracy": test_balanced_acc_cliffs
+        }
+    
+    test_non_cliffs_results = {
+            "Loss": test_loss_non_cliffs,
+            "Accuracy": test_accuracy_non_cliffs,
+            "Precision": test_precision_non_cliffs,
+            "Recall": test_recall_non_cliffs,
+            "F1-Score": test_f1_non_cliffs,
+            "ROC-AUC": test_roc_auc_non_cliffs,
+            "Balanced Accuracy": test_balanced_acc_non_cliffs
+        }
+
+    return pd.DataFrame([val_results]), pd.DataFrame([val_cliffs_results]), pd.DataFrame([val_non_cliffs_results]), pd.DataFrame([test_results]), pd.DataFrame([test_cliffs_results]), pd.DataFrame([test_non_cliffs_results])
+
+    # return val_loss, val_accuracy, val_precision, val_recall, val_f1, val_roc_auc, val_balanced_acc, \
+    #     val_loss_cliffs, val_accuracy_cliffs, val_precision_cliffs, val_recall_cliffs, val_f1_cliffs, val_roc_auc_cliffs, val_balanced_acc_cliffs, \
+    #     val_loss_non_cliffs, val_accuracy_non_cliffs, val_precision_non_cliffs, val_recall_non_cliffs, val_f1_non_cliffs, val_roc_auc_non_cliffs, val_balanced_acc_non_cliffs, \
+    #     test_loss, test_accuracy, test_precision, test_recall, test_f1, test_roc_auc, test_balanced_acc, \
+    #     test_loss_cliffs, test_accuracy_cliffs, test_precision_cliffs, test_recall_cliffs, test_f1_cliffs, test_roc_auc_cliffs, test_balanced_acc_cliffs, \
+    #     test_loss_non_cliffs, test_accuracy_non_cliffs, test_precision_non_cliffs, test_recall_non_cliffs, test_f1_non_cliffs, test_roc_auc_non_cliffs, test_balanced_acc_non_cliffs
