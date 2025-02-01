@@ -170,8 +170,8 @@ def normalize_ecfps(df_train, df_val, df_test):
     return df_train, df_val, df_test
 
 # TODO: description
-def get_cliff_groups_test():
-    df = pd.read_csv("data/df_test.csv")
+def get_cliff_groups_test(path_to_test = "data/df_test.csv"):
+    df = pd.read_csv(path_to_test)
     group_dict = dict()
     next_group_idx = 0
     group_indices = []
