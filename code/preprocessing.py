@@ -60,7 +60,7 @@ def initial_preprocessing(path, threshold, radius, nBits):
     return df
 
 def label_activity_cliffs(df_train, df_val, df_test):
-    """ TODO add real description
+    """ 
     Labels molecules in the corresponding sets as activity cliffs.
 
     Parameters:
@@ -71,9 +71,9 @@ def label_activity_cliffs(df_train, df_val, df_test):
     Returns:
         tuple:
             A tuple containing:
-                - pandas.DataFrame: Train set (reindexed).
-                - pandas.DataFrame: Validation set (reindexed).
-                - pandas.DataFrame: Test set (reindexed).
+                - pandas.DataFrame: Train set.
+                - pandas.DataFrame: Validation set.
+                - pandas.DataFrame: Test set.
     """
 
     for df in [df_train, df_val, df_test]:
@@ -190,7 +190,7 @@ def get_cliff_groups_test(path_to_test = "data/df_test.csv"):
                 group_dict[j].update(similar_molecules)
                 break
 
-        if len(group_indices) != i + 1:  # no group index set yet
+        if len(group_indices) != i + 1:  # no group index set yet for this iteration
             group_dict[next_group_idx] = set(similar_molecules)
             group_indices.append(next_group_idx)
             next_group_idx += 1

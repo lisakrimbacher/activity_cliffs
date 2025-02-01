@@ -474,7 +474,7 @@ perform_add_preprocessing = False
 df, df_train, df_val, df_test = preprocessing.preprocess_data(
     perform_add_preprocessing, path="data/CHEMBL234_Ki.csv")
 
-train_eval_rf = False
+train_eval_rf = True
 
 # choose from: 'MLP', 'MLP Triplet Manhattan', 'MLP Triplet Cosine', None
 load_model = None  # from seed-run 12
@@ -553,9 +553,10 @@ if __name__ == "__main__":
     # add cliff group as column to dataframe
     group_map = {idx: key for key, indices in group_dict.items()
                  for idx in indices}
-    df_test['cliff_group'] = df_test.index.map(group_map)
-    df_test = df_test.dropna(subset=['cliff_group'])
-    df_test['cliff_group'] = df_test['cliff_group'].astype(int)
+    df_test_groups = df_test.copy()
+    df_test_groups['cliff_group'] = df_test_groups.index.map(group_map)
+    df_test_groups = df_test_groups.dropna(subset=['cliff_group'])  # NaN / missing values are non-cliffs
+    df_test_groups['cliff_group'] = df_test_groups['cliff_group'].astype(int)
     cliff_group_results = dict()
 
     for current_seed in [12, 68, 94, 39, 7]:
@@ -595,11 +596,11 @@ if __name__ == "__main__":
             torch.save(network, "models/" + model_name + "_seed" + str(current_seed) + ".pt")
 
         if not train_eval_rf:
-            for i in range(min(df_test['cliff_group']), max(df_test['cliff_group']) + 1):
+            for i in range(min(df_test_groups['cliff_group']), max(df_test_groups['cliff_group']) + 1):
                 if (i not in cliff_group_results):
                     cliff_group_results[i] = []
 
-                filtered_df = df_test[df_test['cliff_group'] == i]
+                filtered_df = df_test_groups[df_test_groups['cliff_group'] == i]
                 dataset = MoleculeACEDataset(
                     filtered_df['ecfp'], filtered_df['active'])
                 loader = DataLoader(dataset, shuffle=True,

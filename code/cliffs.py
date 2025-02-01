@@ -23,6 +23,7 @@ persons to whom the Software is furnished to do so, subject to the following con
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
 Software.
 
+----------------------------------------------------------------------------------------------------------------------------
 
 The Code has been altered to include the possiblity of binary activity labels (Lisa Krimbacher, 23-11-2024).
 
