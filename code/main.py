@@ -479,8 +479,8 @@ train_eval_rf = False
 # choose from: 'MLP', 'MLP Triplet Manhattan', 'MLP Triplet Cosine', None
 load_model = None  # from seed-run 12
 
-use_contrastive_learning = False
-use_cosine_sim = False
+use_contrastive_learning = True
+use_cosine_sim = True
 
 train_losses_total = []
 train_triplet_losses = []
@@ -591,6 +591,8 @@ if __name__ == "__main__":
             test_cliffs_results = compute_metrics(test_loader_cliffs, network)
             test_non_cliffs_results = compute_metrics(
                 test_loader_non_cliffs, network)
+            
+            torch.save(network, "models/" + model_name + "_seed" + str(current_seed) + ".pt")
 
         if not train_eval_rf:
             for i in range(min(df_test['cliff_group']), max(df_test['cliff_group']) + 1):
