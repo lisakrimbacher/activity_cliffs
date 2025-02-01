@@ -6,6 +6,7 @@ from rdkit.Chem import AllChem
 import torch
 from sklearn.preprocessing import StandardScaler
 import random
+import ast
 
 import cliffs as cliffs_van_tilborg_et_al
 import data_prep as data_prep_van_tilborg_et_al
@@ -168,6 +169,53 @@ def normalize_ecfps(df_train, df_val, df_test):
 
     return df_train, df_val, df_test
 
+# TODO: description
+def get_cliff_groups_test():
+    df = pd.read_csv("data/df_test.csv")
+    group_dict = dict()
+    next_group_idx = 0
+    group_indices = []
+
+    for i, similar_molecules in enumerate(df['similar_molecules']):
+        similar_molecules = ast.literal_eval(similar_molecules)
+        # non-cliff molecules:
+        if len(similar_molecules) == 0 or df['cliff_mol_binary'][i] == 0:
+            group_indices.append(-1)
+            continue
+
+        # cliff molecules:
+        for j in range(0, next_group_idx):  # keys already in dictionary
+            if i in group_dict[j]:
+                group_indices.append(j)
+                group_dict[j].update(similar_molecules)
+                break
+
+        if len(group_indices) != i + 1:  # no group index set yet
+            group_dict[next_group_idx] = set(similar_molecules)
+            group_indices.append(next_group_idx)
+            next_group_idx += 1
+
+    return merge_overlapping_sets(group_dict)
+
+# TODO: description
+def merge_overlapping_sets(group_dict):
+    keys = list(group_dict.keys())
+    merged_sets = []
+
+    for key in keys:
+        merged = False
+        for m_set in merged_sets:
+            if not group_dict[key].isdisjoint(m_set):
+                m_set.update(group_dict[key])
+                merged = True
+                break
+        if not merged:
+            merged_sets.append(group_dict[key])
+
+    # reassign merged sets to a new dictionary with sequential keys
+    merged_dict = {idx: merged_set for idx, merged_set in enumerate(merged_sets)}
+
+    return merged_dict
 
 def preprocess_data(perform_add_preprocessing, path):
     """

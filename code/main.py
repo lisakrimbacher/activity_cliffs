@@ -350,7 +350,7 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
 #     print()
 
 
-def print_results(set_name, results, results_cliffs, results_non_cliffs, save_to_csv, model_name=""):
+def print_save_results(set_name, results, results_cliffs, results_non_cliffs, save_to_csv, model_name=""):
 
     if save_to_csv:
         header = [
@@ -369,6 +369,8 @@ def print_results(set_name, results, results_cliffs, results_non_cliffs, save_to
     for results_array, label in zip([results, results_non_cliffs, results_cliffs], ["all molecules", "non-cliff molecules", "cliff molecules"]):
         mean = np.mean(results_array, axis=0)
         std = np.std(results_array, axis=0)
+        # mean = results_array.mean(axis=0)
+        # std = results_array.std(axis=0)
 
         print(f"Performance on {set_name} set ({label}):")
         print(
@@ -400,12 +402,46 @@ def print_results(set_name, results, results_cliffs, results_non_cliffs, save_to
             ])
 
         if save_to_csv:
-            with open(f"data/Results_{set_name}_{model_name}.csv", mode="w", newline="") as csv_file:
+            with open(f"results/Results_{set_name}_{model_name}.csv", mode="w", newline="") as csv_file:
                 writer = csv.writer(csv_file)
                 writer.writerow(header)  # Write the header
                 writer.writerows(data)
 
-        # TODO: save to csv-file(s)
+def save_results_test_cliff_groups(cliff_group_results, model_name):
+    data = []
+
+    for i, results in cliff_group_results.items():
+        df_combined = pd.concat(results, axis=0)
+
+        mean = df_combined.mean(axis=0)
+        std = df_combined.std(axis=0)
+
+        data.append([
+                i,
+                mean['Loss'], std['Loss'],
+                mean['ROC-AUC'], std['ROC-AUC'],
+                mean['Accuracy'], std['Accuracy'],
+                mean['Precision'], std['Precision'],
+                mean['Recall'], std['Recall'],
+                mean['F1-Score'], std['F1-Score'],
+                mean['Balanced Accuracy'], std['Balanced Accuracy'],
+            ])
+
+    with open(f"results/Results_Cliff_Groups_Test_{model_name}.csv", mode="w", newline="") as csv_file:
+        writer = csv.writer(csv_file)
+        header = [
+            "Cliff_Group",
+            "Loss_mean", "Loss_std",
+            "ROC-AUC_mean", "ROC-AUC_std",
+            "Accuracy_mean", "Accuracy_std",
+            "Precision_mean", "Precision_std",
+            "Recall_mean", "Recall_std",
+            "F1-Score_mean", "F1-Score_std",
+            "Balanced_Accuracy_mean", "Balanced_Accuracy_std",
+        ]
+        writer.writerow(header)
+        writer.writerows(data)
+
 
 
 def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train_loader=False):
@@ -478,8 +514,10 @@ df, df_train, df_val, df_test = preprocessing.preprocess_data(
     perform_add_preprocessing, path="data/CHEMBL234_Ki.csv")
 
 train_eval_rf = False
+
 # choose from: 'MLP', 'MLP Triplet Manhattan', 'MLP Triplet Cosine', None
 load_model = None
+
 use_contrastive_learning = True
 use_cosine_sim = True
 
@@ -491,8 +529,8 @@ val_losses = []
 
 if __name__ == "__main__":
 
-    configs = [  # TODO: check if configurations are right like this, i.e. if the first is for MLP BCE etc.
-        {
+    configs = [  
+        {  # MLP BCE
             'optimizer': 'adam',
             'epochs': 16,
             'learning_rate': 0.0041,
@@ -504,7 +542,7 @@ if __name__ == "__main__":
             'dropout': 0.25,
             'alpha': 0.0
         },
-        {
+        {  # MLP Manhattan
             'optimizer': 'adam',
             'epochs': 34,
             'learning_rate': 0.0228,
@@ -516,7 +554,7 @@ if __name__ == "__main__":
             'dropout': 0.1,
             'alpha': 0.5405
         },
-        {
+        {  # MLP Cosine
             'optimizer': 'adam',
             'epochs': 26,
             'learning_rate': 0.1192,
@@ -548,6 +586,17 @@ if __name__ == "__main__":
     test_cliffs_results_list = []
     test_non_cliffs_results_list = []
 
+    # extract cliff groups of test set
+    #df_test = pd.read_csv("data/df_test.csv")
+    group_dict = preprocessing.get_cliff_groups_test()
+
+    # add cliff group as column to dataframe
+    group_map = {idx: key for key, indices in group_dict.items() for idx in indices}
+    df_test['cliff_group'] = df_test.index.map(group_map)
+    df_test = df_test.dropna(subset=['cliff_group'])
+    df_test['cliff_group'] = df_test['cliff_group'].astype(int)
+    cliff_group_results = dict()
+
     for current_seed in [12, 68, 94, 39, 7]:
 
         # config_dict = {
@@ -565,7 +614,7 @@ if __name__ == "__main__":
 
         train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = build_dataset(
             config_dict['batch_size'], use_contrastive_learning=False)
-        if train_eval_rf:
+        if train_eval_rf:  # TODO: check if running RF leads to runtime excpetions
             model_name = "RF"
             # val_loss, val_accuracy, val_precision, val_recall, val_f1, val_roc_auc, val_balanced_acc, \
             #     val_loss_cliffs, val_accuracy_cliffs, val_precision_cliffs, val_recall_cliffs, val_f1_cliffs, val_roc_auc_cliffs, val_balanced_acc_cliffs, \
@@ -600,6 +649,27 @@ if __name__ == "__main__":
             test_cliffs_results = compute_metrics(test_loader_cliffs, network)
             test_non_cliffs_results = compute_metrics(
                 test_loader_non_cliffs, network)
+            
+
+        for i in range(min(df_test['cliff_group']), max(df_test['cliff_group']) + 1):
+            if (i not in cliff_group_results):
+                cliff_group_results[i] = []
+
+            filtered_df = df_test[df_test['cliff_group'] == i]
+            dataset = MoleculeACEDataset(filtered_df['ecfp'], filtered_df['active'])
+            loader = DataLoader(dataset, shuffle=True, batch_size=config_dict['batch_size']) 
+            results = compute_metrics(loader, network)
+            # cliff_group_results[i].append([
+            #         i,
+            #         results['Loss'], results['Loss'],
+            #         results['ROC-AUC'], results['ROC-AUC'],
+            #         results['Accuracy'], results['Accuracy'],
+            #         results['Precision'], results['Precision'],
+            #         results['Recall'], results['Recall'],
+            #         results['F1-Score'], results['F1-Score'],
+            #         results['Balanced Accuracy'], results['Balanced Accuracy'],
+            #     ])
+            cliff_group_results[i].append(results)
 
         val_results_list.append(val_results)
         val_cliffs_results_list.append(val_cliffs_results)
@@ -621,11 +691,13 @@ if __name__ == "__main__":
     cumulated_test_non_cliffs_results = pd.concat(
         test_non_cliffs_results_list, ignore_index=True)
 
-    print_results("Validation", cumulated_val_results,
+    print_save_results("Validation", cumulated_val_results,
                   cumulated_val_cliffs_results, cumulated_val_non_cliffs_results, save_to_csv=True, model_name=model_name)
     print()
-    print_results("Test", cumulated_test_results,
+    print_save_results("Test", cumulated_test_results,
                   cumulated_test_cliffs_results, cumulated_test_non_cliffs_results, save_to_csv=True, model_name=model_name)
+    
+    save_results_test_cliff_groups(cliff_group_results, model_name=model_name)
 
     if load_model is None and not train_eval_rf:
         fig, axes = plt.subplots(2, 2, figsize=(10, 7))
