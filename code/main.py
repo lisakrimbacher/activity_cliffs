@@ -471,10 +471,18 @@ def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train
 
 
 perform_add_preprocessing = False
-df, df_train, df_val, df_test = preprocessing.preprocess_data(
-    perform_add_preprocessing, path="data/CHEMBL234_Ki.csv")
 
-train_eval_rf = True
+# CHEMBL214_Ki  
+# CHEMBL233_Ki 
+# CHEMBL234_Ki
+# CHEMBL244_Ki
+# CHEMBL264_Ki
+dataset_folder = "CHEMBL264_Ki"
+
+df, df_train, df_val, df_test = preprocessing.preprocess_data(
+    perform_add_preprocessing, dataset_folder=dataset_folder)
+
+train_eval_rf = False
 
 # choose from: 'MLP', 'MLP Triplet Manhattan', 'MLP Triplet Cosine', None
 load_model = None  # from seed-run 12
@@ -548,7 +556,7 @@ if __name__ == "__main__":
     test_non_cliffs_results_list = []
 
     # extract cliff groups of test set
-    group_dict = preprocessing.get_cliff_groups_test()
+    group_dict = preprocessing.get_cliff_groups_test("data/" + dataset_folder + "/df_test.csv")
 
     # add cliff group as column to dataframe
     group_map = {idx: key for key, indices in group_dict.items()
@@ -573,13 +581,13 @@ if __name__ == "__main__":
                     config_dict, use_contrastive_learning=use_contrastive_learning, use_cosine_sim=use_cosine_sim, seed=current_seed)
             elif load_model == 'MLP':
                 network = torch.load(
-                    'models/baseline_mlp.pt', weights_only=False)
+                    'models/' + dataset_folder + '/baseline_mlp.pt', weights_only=False)
             elif load_model == 'MLP Triplet Manhattan':
                 network = torch.load(
-                    'models/mlp_triplet_manhattan.pt', weights_only=False)
+                    'models/' + dataset_folder + '/mlp_triplet_manhattan.pt', weights_only=False)
             elif load_model == 'MLP Triplet Cosine':
                 network = torch.load(
-                    'models/mlp_triplet_cosine.pt', weights_only=False)
+                    'models/' + dataset_folder + '/mlp_triplet_cosine.pt', weights_only=False)
             else:
                 raise Exception("invalid flag combination")
 
@@ -593,7 +601,7 @@ if __name__ == "__main__":
             test_non_cliffs_results = compute_metrics(
                 test_loader_non_cliffs, network)
             
-            torch.save(network, "models/" + model_name + "_seed" + str(current_seed) + ".pt")
+            torch.save(network, 'models/' + dataset_folder + '/' + model_name + "_seed" + str(current_seed) + ".pt")
 
         if not train_eval_rf:
             for i in range(min(df_test_groups['cliff_group']), max(df_test_groups['cliff_group']) + 1):

@@ -170,7 +170,7 @@ def normalize_ecfps(df_train, df_val, df_test):
     return df_train, df_val, df_test
 
 # TODO: description
-def get_cliff_groups_test(path_to_test = "data/df_test.csv"):
+def get_cliff_groups_test(path_to_test = "data/CHEMBL234_Ki/df_test.csv"):
     df = pd.read_csv(path_to_test)
     group_dict = dict()
     next_group_idx = 0
@@ -217,14 +217,14 @@ def merge_overlapping_sets(group_dict):
 
     return merged_dict
 
-def preprocess_data(perform_add_preprocessing, path):
+def preprocess_data(perform_add_preprocessing, dataset_folder):
     """
     Performs preprocessing on the dataset.
 
     Parameters:
         perform_add_preprocessing (bool): True if dataset should be preprocessed (binarization etc.), False if 
             already preprocessed dataframes should be loaded from the data folder.
-        path (string): Path to the dataset.
+        dataset_folder (string): Folder name of the dataset.
         rad (int): The radius used for the ECFP computation (determines the size of the "neighborhood" considered).
         nB (int): Length (number of Bits) the resulting ECFP should have.
 
@@ -238,7 +238,7 @@ def preprocess_data(perform_add_preprocessing, path):
 
     if perform_add_preprocessing:
         df = initial_preprocessing(
-            path=path, threshold=7, radius=3, nBits=2048)
+            path="data/" + dataset_folder + "/" + dataset_folder + ".csv", threshold=7, radius=3, nBits=2048)
         df_train, df_val, df_test = split_data(df)
         df_train, df_val, df_test = normalize_ecfps(df_train, df_val, df_test)
         df_train, df_val, df_test = reset_indices(df_train, df_val, df_test)
@@ -280,20 +280,20 @@ def preprocess_data(perform_add_preprocessing, path):
         df_test_save['similar_molecules'] = df_test_save['similar_molecules'].apply(
             lambda x: json.dumps(x.tolist() if isinstance(x, np.ndarray) else x))
 
-        df_save.to_csv(r'data/df.csv', index=False)
-        df_train_save.to_csv(r'data/df_train.csv', index=False)
-        df_val_save.to_csv(r'data/df_val.csv', index=False)
-        df_test_save.to_csv(r'data/df_test.csv', index=False)
+        df_save.to_csv(r'data/' + dataset_folder + '/df.csv', index=False)
+        df_train_save.to_csv(r'data/' + dataset_folder + '/df_train.csv', index=False)
+        df_val_save.to_csv(r'data/' + dataset_folder + '/df_val.csv', index=False)
+        df_test_save.to_csv(r'data/' + dataset_folder + '/df_test.csv', index=False)
 
     else:
 
         def str_to_array(x):
             return np.array(json.loads(x), dtype=np.float32)
 
-        df = pd.read_csv('data/df.csv')
-        df_train = pd.read_csv('data/df_train.csv')
-        df_val = pd.read_csv('data/df_val.csv')
-        df_test = pd.read_csv('data/df_test.csv')
+        df = pd.read_csv('data/' + dataset_folder + '/df.csv')
+        df_train = pd.read_csv('data/' + dataset_folder + '/df_train.csv')
+        df_val = pd.read_csv('data/' + dataset_folder + '/df_val.csv')
+        df_test = pd.read_csv('data/' + dataset_folder + '/df_test.csv')
 
         df['ecfp'] = df['ecfp'].apply(str_to_array)
         df_train['ecfp'] = df_train['ecfp'].apply(str_to_array)
