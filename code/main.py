@@ -14,7 +14,7 @@ from model import MoleculeACEDataset, MLP, train_rf
 import preprocessing
 
 
-def build_dataset(batch_size, use_contrastive_learning=False):
+def build_dataset(batch_size, seed, use_contrastive_learning=False):
     """
     Builds DataLoaders for the training, validation and test sets for all molecules and just for activity cliff molecules.
 
@@ -33,6 +33,11 @@ def build_dataset(batch_size, use_contrastive_learning=False):
                 - torch.utils.data.DataLoader: DataLoader for validation set (cliff molecules).
                 - torch.utils.data.DataLoader: DataLoader for test set (cliff molecules).
     """
+
+    # np.random.seed(seed)
+    # random.seed(seed)
+    # torch.manual_seed(seed)
+    # torch.random.manual_seed(seed)
 
     cliff_df_train = df_train[df_train['cliff_mol_binary'] == 1]
     cliff_df_val = df_val[df_val['cliff_mol_binary'] == 1]
@@ -105,10 +110,10 @@ def build_network(n_hidden_layers=2, n_hidden_units=1024, activation_function=nn
     Returns:
         MLP: Built Multi-layer Perceptron.
     """
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.manual_seed(seed)
-    torch.random.manual_seed(seed)
+    # np.random.seed(seed)
+    # random.seed(seed)
+    # torch.manual_seed(seed)
+    # torch.random.manual_seed(seed)
 
     network = MLP(n_input_features=2048, n_hidden_layers=n_hidden_layers, n_hidden_units=n_hidden_units,
                   activation_function=activation_function, input_dropout=input_dropout,
@@ -172,7 +177,7 @@ def train(config, use_contrastive_learning=False, use_cosine_sim=False, seed=12)
     torch.random.manual_seed(seed)
 
     loaders = build_dataset(
-        config['batch_size'], use_contrastive_learning=use_contrastive_learning)
+        config['batch_size'], seed=seed, use_contrastive_learning=use_contrastive_learning)
 
     network = build_network(n_hidden_layers=config['n_hidden_layers'], n_hidden_units=config['n_hidden_units'],
                             activation_function=act_fcn,
@@ -219,7 +224,7 @@ def train_wandb(config=None):
 
     # TODO: check use_contrastive_learning, use_cosine_sim, current_seed
 
-    #config = wandb.config
+    # config = wandb.config
 
     alpha_dropout = True if config.activation_function == "selu" else False
 
@@ -238,7 +243,7 @@ def train_wandb(config=None):
     torch.random.manual_seed(config.current_seed)
 
     loaders = build_dataset(
-        config.batch_size, use_contrastive_learning=use_contrastive_learning)
+        config.batch_size, seed=config.current_seed, use_contrastive_learning=use_contrastive_learning)
 
     network = build_network(n_hidden_layers=config.n_hidden_layers, n_hidden_units=config.n_hidden_units,
                             activation_function=act_fcn,
@@ -314,7 +319,7 @@ def train_wandb(config=None):
     # network_path = f"wandb/{dataset_folder}_{run.id}_{config.current_seed}.pt"
     # torch.save(network, network_path)
 
-    return network, *loaders #train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs
+    return network  # , *loaders #train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs
 
 
 def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss_function=nn.BCEWithLogitsLoss(),
@@ -338,7 +343,6 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
     Returns:
         various metrics (float)
     """
-    # TODO: check reproducibility
     # np.random.seed(seed + epoch_id)
     # random.seed(seed + epoch_id)
     # torch.manual_seed(seed + epoch_id)
@@ -431,65 +435,6 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
     return train_results, val_results, val_cliffs_results, val_non_cliffs_results
 
 
-# def create_sweep_config():
-#     # TODO: create docstring
-
-
-#     # https://docs.wandb.ai/guides/sweeps/sweep-config-keys
-
-#     sweep_config = {
-#         'method': 'bayes'
-#         }
-
-#     metric = {
-#         'name': 'val_loss',
-#         'goal': 'minimize'
-#         }
-
-#     sweep_config['metric'] = metric
-
-#     parameters_dict = {
-#         'optimizer': {
-#             'values': ['adam']
-#             },
-#         'epochs': {
-#             'values': [20, 50, 70, 100]
-#             },
-#         'learning_rate': {
-#             'min': 1e-3,
-#             'max': 1e0
-#             },
-#         'batch_size': {
-#             'values': [56, 128]
-#             },
-#         'n_hidden_layers': {
-#             'values': [2, 3, 4, 6]
-#             },
-#         'n_hidden_units': {
-#             'values': [1024, 768, 512, 256, 128]
-#             },
-#         'activation_function': {
-#             'values': ["relu", "selu", "leaky_relu"]
-#             },
-#         'input_dropout': {
-#             'values': [0., 0.1, 0.2, 0.5, 0.6, 0.7]
-#             },
-#         'dropout': {
-#             'values': [0., 0.1, 0.2, 0.3, 0.5]
-#             },
-#         'alpha': {
-#             'min': 0.1,
-#             'max': 2.0
-#             },
-#         'margin': {
-#             'values': [1.]
-#             },
-#         }
-
-#     sweep_config['parameters'] = parameters_dict
-
-#     return sweep_config
-
 def run_sweep(sweep_id, fcn, count):
     # TODO: create docstring
     wandb.agent(sweep_id, function=fcn, count=count)
@@ -502,26 +447,26 @@ def log_avg_results(set_name, results, results_cliffs, results_non_cliffs):
         std = np.std(results_array, axis=0)
 
         wandb.log({
-            set_name + 'loss_' + label + '_mean': mean['Loss'].item(),
-            set_name + 'loss_' + label + '_std': std['Loss'].item(),
+            set_name + '_loss_' + label + '_mean': mean['Loss'].item(),
+            set_name + '_loss_' + label + '_std': std['Loss'].item(),
 
-            set_name + 'roc-auc_' + label + '_mean': mean['ROC-AUC'].item(),
-            set_name + 'roc-auc_' + label + '_std': std['ROC-AUC'].item(),
+            set_name + '_roc-auc_' + label + '_mean': mean['ROC-AUC'].item(),
+            set_name + '_roc-auc_' + label + '_std': std['ROC-AUC'].item(),
 
-            set_name + 'accuracy_' + label + '_mean': mean['Accuracy'].item(),
-            set_name + 'accuracy_' + label + '_std': std['Accuracy'].item(),
+            set_name + '_accuracy_' + label + '_mean': mean['Accuracy'].item(),
+            set_name + '_accuracy_' + label + '_std': std['Accuracy'].item(),
 
-            set_name + 'precision_' + label + '_mean': mean['Precision'].item(),
-            set_name + 'precision_' + label + '_std': std['Precision'].item(),
+            set_name + '_precision_' + label + '_mean': mean['Precision'].item(),
+            set_name + '_precision_' + label + '_std': std['Precision'].item(),
 
-            set_name + 'recall_' + label + '_mean': mean['Recall'].item(),
-            set_name + 'recall_' + label + '_std': std['Recall'].item(),
+            set_name + '_recall_' + label + '_mean': mean['Recall'].item(),
+            set_name + '_recall_' + label + '_std': std['Recall'].item(),
 
-            set_name + 'f1-score_' + label + '_mean': mean['F1-Score'].item(),
-            set_name + 'f1-score_' + label + '_std': std['F1-Score'].item(),
+            set_name + '_f1-score_' + label + '_mean': mean['F1-Score'].item(),
+            set_name + '_f1-score_' + label + '_std': std['F1-Score'].item(),
 
-            set_name + 'balanced-accuracy_' + label + '_mean': mean['Balanced Accuracy'].item(),
-            set_name + 'balanced-accuracy_' + label + '_std': std['Balanced Accuracy'].item(),
+            set_name + '_balanced-accuracy_' + label + '_mean': mean['Balanced Accuracy'].item(),
+            set_name + '_balanced-accuracy_' + label + '_std': std['Balanced Accuracy'].item(),
         })
 
 
@@ -765,16 +710,23 @@ def run_sweep_multiple_seeds(config=None):
     test_cliffs_results_list = []
     test_non_cliffs_results_list = []
 
-    for current_seed in [12, 68, 94, 39, 7]:
+    for current_seed in [7, 12, 39, 68, 94]:
+
+        # np.random.seed(current_seed)
+        # random.seed(current_seed)
+        # torch.manual_seed(current_seed)
+        # torch.random.manual_seed(current_seed)
 
         # sweep_config["parameters"]["current_seed"] = {"value": current_seed}
         wandb.config.update({"current_seed": current_seed},
                             allow_val_change=True)
-        network, train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = train_wandb(
-            wandb.config)
 
-        # train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = build_dataset(
-        #     wandb.config.batch_size, use_contrastive_learning=False)
+        train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = build_dataset(
+            wandb.config['batch_size'], seed=current_seed, use_contrastive_learning=False)
+
+        # network, train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = train_wandb(
+        #     wandb.config)
+        network = train_wandb(wandb.config)
 
         val_results = compute_metrics(val_loader, network)
         val_cliffs_results = compute_metrics(val_loader_cliffs, network)
@@ -826,7 +778,7 @@ dataset_folder = "CHEMBL234_Ki"
 df, df_train, df_val, df_test = preprocessing.preprocess_data(
     perform_add_preprocessing, dataset_folder=dataset_folder)
 
-tune_wandb = True
+tune_wandb = False
 
 train_eval_rf = False
 
@@ -854,7 +806,7 @@ if __name__ == "__main__":
     else:
 
         configs = [
-            {  # MLP BCE
+            {  # MLP BCE CHEMBL234_Ki
                 'optimizer': 'adam',
                 'epochs': 16,
                 'learning_rate': 0.0041,
@@ -866,7 +818,7 @@ if __name__ == "__main__":
                 'dropout': 0.25,
                 'alpha': 0.0
             },
-            {  # MLP Manhattan
+            {  # MLP Manhattan CHEMBL234_Ki
                 'optimizer': 'adam',
                 'epochs': 34,
                 'learning_rate': 0.0228,
@@ -878,7 +830,7 @@ if __name__ == "__main__":
                 'dropout': 0.1,
                 'alpha': 0.5405
             },
-            {  # MLP Cosine
+            {  # MLP Cosine CHEMBL234_Ki
                 'optimizer': 'adam',
                 'epochs': 26,
                 'learning_rate': 0.1192,
@@ -925,10 +877,29 @@ if __name__ == "__main__":
             int)
         cliff_group_results = dict()
 
-        for current_seed in [12, 68, 94, 39, 7]:
+        for current_seed in [7, 12, 39, 68, 94]:
+
+            # np.random.seed(current_seed)
+            # random.seed(current_seed)
+            # torch.manual_seed(current_seed)
+            # torch.random.manual_seed(current_seed)
+
+            # config_dict = {  # TODO: delete or refactor
+            #     'optimizer': 'adam',
+            #     'epochs': 20,
+            #     'learning_rate': 0.507491509069661,
+            #     'batch_size': 128,
+            #     'n_hidden_layers': 6,
+            #     'n_hidden_units': 256,
+            #     'activation_function': 'selu',
+            #     'input_dropout': 0.6,
+            #     'dropout': 0.2,
+            #     'alpha': 0.8457691803134341,
+            #     'margin': 1.,
+            # }
 
             train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = build_dataset(
-                config_dict['batch_size'], use_contrastive_learning=False)
+                config_dict['batch_size'], seed=current_seed, use_contrastive_learning=False)
             if train_eval_rf:
                 model_name = "RF"
                 val_results, val_cliffs_results, val_non_cliffs_results, test_results, test_cliffs_results, test_non_cliffs_results = train_rf(train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs,
