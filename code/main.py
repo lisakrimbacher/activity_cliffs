@@ -439,7 +439,8 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
 
 def run_sweep(sweep_id, fcn, count):
     # TODO: create docstring
-    wandb.agent(sweep_id, function=fcn, count=count, project="ActivityCliffs", entity="lisakr")
+    wandb.agent(sweep_id, function=fcn, count=count,
+                project="ActivityCliffs", entity="lisakr")
 
 
 def log_avg_results(set_name, results, results_cliffs, results_non_cliffs):
@@ -590,14 +591,15 @@ def compute_bce_loss_per_datapoint(loader, network, train_loader=False):
         outputs_total = torch.cat(outputs_total, dim=0)
         targets_total = torch.cat(targets_total, dim=0)
 
-        losses = nn.BCEWithLogitsLoss(reduction='none')(outputs_total, targets_total)
+        losses = nn.BCEWithLogitsLoss(reduction='none')(
+            outputs_total, targets_total)
 
         return np.array([loss.item() for loss in losses])
-    
+
 
 def save_mean_loss_test_per_datapoint(loss_data, model_name, cliff_text):
     # TODO: add docstring
-            
+
     losses = np.array(loss_data)
     mean_loss_per_datapoint = np.mean(losses, axis=0)
     std_loss_per_datapoint = np.std(losses, axis=0)
@@ -607,7 +609,8 @@ def save_mean_loss_test_per_datapoint(loss_data, model_name, cliff_text):
         "Loss_std": std_loss_per_datapoint
     })
 
-    csv_filename = f"results/" + dataset_folder + f"/Loss_Per_Datapoint_Test{cliff_text}_{model_name}.csv"
+    csv_filename = f"results/" + dataset_folder + \
+        f"/Loss_Per_Datapoint_Test{cliff_text}_{model_name}.csv"
     df.to_csv(csv_filename, index=False)
 
 
@@ -822,7 +825,7 @@ perform_add_preprocessing = False
 # CHEMBL234_Ki, 3657 entries (tuned)
 # CHEMBL244_Ki, 3097 entries
 # CHEMBL264_Ki, 2862 entries
-dataset_folder = "CHEMBL234_Ki"
+dataset_folder = "CHEMBL214_Ki"
 
 df, df_train, df_val, df_test = preprocessing.preprocess_data(
     perform_add_preprocessing, dataset_folder=dataset_folder)
@@ -843,56 +846,100 @@ train_basic_losses = []
 val_losses = []
 
 
+all_configs = {
+    "CHEMBL234_Ki": [
+        {  # MLP BCE
+            'optimizer': 'adam',
+            'epochs': 22,
+            'learning_rate': 0.0601,
+            'batch_size': 128,
+            'n_hidden_layers': 4,
+            'n_hidden_units': 768,
+            'activation_function': 'selu',
+            'input_dropout': 0.1,
+            'dropout': 0.3,
+            'alpha': 1.3461
+        },
+        {  # MLP Manhattan
+            'optimizer': 'adam',
+            'epochs': 22,
+            'learning_rate': 0.0105,
+            'batch_size': 56,
+            'n_hidden_layers': 2,
+            'n_hidden_units': 128,
+            'activation_function': 'relu',
+            'input_dropout': 0.0,
+            'dropout': 0.3,
+            'alpha': 1.1719
+        },
+        {  # MLP Cosine
+            'optimizer': 'adam',
+            'epochs': 20,
+            'learning_rate': 0.0079,
+            'batch_size': 56,
+            'n_hidden_layers': 4,
+            'n_hidden_units': 768,
+            'activation_function': 'leaky_relu',
+            'input_dropout': 0.3,
+            'dropout': 0.2,
+            'alpha': 0.3946
+        }
+    ],
+
+    "CHEMBL214_Ki": [
+        {  # MLP BCE
+            'optimizer': 'adam',
+            'epochs': 25,
+            'learning_rate': 0.7732,
+            'batch_size': 56,
+            'n_hidden_layers': 3,
+            'n_hidden_units': 256,
+            'activation_function': 'selu',
+            'input_dropout': 0.1,
+            'dropout': 0.1,
+            'alpha': 0.4286
+        },
+        {  # MLP Manhattan
+            'optimizer': 'adam',
+            'epochs': 30,
+            'learning_rate': 0.8537,
+            'batch_size': 56,
+            'n_hidden_layers': 5,
+            'n_hidden_units': 128,
+            'activation_function': 'relu',
+            'input_dropout': 0.5,
+            'dropout': 0.0,
+            'alpha': 0.8309
+        },
+        {  # MLP Cosine
+            'optimizer': 'adam',
+            'epochs': 19,
+            'learning_rate': 0.6750,
+            'batch_size': 128,
+            'n_hidden_layers': 4,
+            'n_hidden_units': 768,
+            'activation_function': 'leaky_relu',
+            'input_dropout': 0.0,
+            'dropout': 0.0,
+            'alpha': 1.7739
+        }
+    ],
+}
+
+
 if __name__ == "__main__":
 
     if tune_wandb:
         wandb.login()
         sweep_config = create_sweep_config()
-        #sweep_id = wandb.sweep(sweep_config, project="ActivityCliffs")
+        # sweep_id = wandb.sweep(sweep_config, project="ActivityCliffs")
         sweep_id = "uom9tt5r"
 
         run_sweep(sweep_id, run_sweep_multiple_seeds, 15)
 
     else:
 
-        configs = [
-            {  # MLP BCE CHEMBL234_Ki
-                'optimizer': 'adam',
-                'epochs': 22,
-                'learning_rate': 0.0601,
-                'batch_size': 128,
-                'n_hidden_layers': 4,
-                'n_hidden_units': 768,
-                'activation_function': 'selu',
-                'input_dropout': 0.1,
-                'dropout': 0.3,
-                'alpha': 1.3461
-            },
-            {  # MLP Manhattan CHEMBL234_Ki
-                'optimizer': 'adam',
-                'epochs': 22,
-                'learning_rate': 0.0105,
-                'batch_size': 56,
-                'n_hidden_layers': 2,
-                'n_hidden_units': 128,
-                'activation_function': 'relu',
-                'input_dropout': 0.0,
-                'dropout': 0.3,
-                'alpha': 1.1719
-            },
-            {  # MLP Cosine CHEMBL234_Ki
-                'optimizer': 'adam',
-                'epochs': 20,
-                'learning_rate': 0.0079,
-                'batch_size': 56,
-                'n_hidden_layers': 4,
-                'n_hidden_units': 768,
-                'activation_function': 'leaky_relu',
-                'input_dropout': 0.3,
-                'dropout': 0.2,
-                'alpha': 0.3946
-            }
-        ]
+        configs = all_configs[dataset_folder]
 
         if (not load_model):
             if (use_contrastive_learning and use_cosine_sim):
@@ -966,10 +1013,13 @@ if __name__ == "__main__":
                     test_loader_cliffs, network)
                 test_non_cliffs_results = compute_metrics(
                     test_loader_non_cliffs, network)
-                
-                test_loss_per_datapoint_list.append(compute_bce_loss_per_datapoint(test_loader, network))
-                test_loss_per_datapoint_cliffs_list.append(compute_bce_loss_per_datapoint(test_loader_cliffs, network))
-                test_loss_per_datapoint_non_cliffs_list.append(compute_bce_loss_per_datapoint(test_loader_non_cliffs, network))
+
+                test_loss_per_datapoint_list.append(
+                    compute_bce_loss_per_datapoint(test_loader, network))
+                test_loss_per_datapoint_cliffs_list.append(
+                    compute_bce_loss_per_datapoint(test_loader_cliffs, network))
+                test_loss_per_datapoint_non_cliffs_list.append(
+                    compute_bce_loss_per_datapoint(test_loader_non_cliffs, network))
 
                 torch.save(network, 'models/' + dataset_folder + '/' +
                            model_name + "_seed" + str(current_seed) + ".pt")
@@ -1017,14 +1067,16 @@ if __name__ == "__main__":
         if not train_eval_rf:
             save_results_test_cliff_groups(
                 cliff_group_results, model_name=model_name)
-            
-            save_mean_loss_test_per_datapoint(test_loss_per_datapoint_list, cliff_text="", model_name=model_name)
-            save_mean_loss_test_per_datapoint(test_loss_per_datapoint_cliffs_list, cliff_text="_Cliffs", model_name=model_name)
-            save_mean_loss_test_per_datapoint(test_loss_per_datapoint_non_cliffs_list, cliff_text="_Non_Cliffs", model_name=model_name)
 
+            save_mean_loss_test_per_datapoint(
+                test_loss_per_datapoint_list, cliff_text="", model_name=model_name)
+            save_mean_loss_test_per_datapoint(
+                test_loss_per_datapoint_cliffs_list, cliff_text="_Cliffs", model_name=model_name)
+            save_mean_loss_test_per_datapoint(
+                test_loss_per_datapoint_non_cliffs_list, cliff_text="_Non_Cliffs", model_name=model_name)
 
         if False:
-        #if load_model is None and not train_eval_rf:
+            # if load_model is None and not train_eval_rf:
             fig, axes = plt.subplots(2, 2, figsize=(10, 7))
 
             axes[0, 0].plot(train_losses_total)
