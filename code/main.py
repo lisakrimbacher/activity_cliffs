@@ -548,7 +548,7 @@ def save_results_test_cliff_groups(cliff_group_results, model_name):
             mean['Balanced Accuracy'], std['Balanced Accuracy'],
         ])
 
-    with open(f"results/" + dataset_folder + "/Results_Cliff_Groups_Test_{model_name}.csv", mode="w", newline="") as csv_file:
+    with open(f"results/" + dataset_folder + f"/Results_Cliff_Groups_Test_{model_name}.csv", mode="w", newline="") as csv_file:
         writer = csv.writer(csv_file)
         header = [
             "Cliff_Group",
@@ -593,6 +593,22 @@ def compute_bce_loss_per_datapoint(loader, network, train_loader=False):
         losses = nn.BCEWithLogitsLoss(reduction='none')(outputs_total, targets_total)
 
         return np.array([loss.item() for loss in losses])
+    
+
+def save_mean_loss_test_per_datapoint(loss_data, model_name, cliff_text):
+    # TODO: add docstring
+            
+    losses = np.array(loss_data)
+    mean_loss_per_datapoint = np.mean(losses, axis=0)
+    std_loss_per_datapoint = np.std(losses, axis=0)
+
+    df = pd.DataFrame({
+        "Loss_mean": mean_loss_per_datapoint,
+        "Loss_std": std_loss_per_datapoint
+    })
+
+    csv_filename = f"results/" + dataset_folder + f"/Loss_Per_Datapoint_Test{cliff_text}_{model_name}.csv"
+    df.to_csv(csv_filename, index=False)
 
 
 def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train_loader=False):
@@ -896,7 +912,9 @@ if __name__ == "__main__":
         test_cliffs_results_list = []
         test_non_cliffs_results_list = []
 
+        test_loss_per_datapoint_list = []
         test_loss_per_datapoint_cliffs_list = []
+        test_loss_per_datapoint_non_cliffs_list = []
 
         # extract cliff groups of test set
         group_dict = preprocessing.get_cliff_groups_test(
@@ -949,7 +967,9 @@ if __name__ == "__main__":
                 test_non_cliffs_results = compute_metrics(
                     test_loader_non_cliffs, network)
                 
+                test_loss_per_datapoint_list.append(compute_bce_loss_per_datapoint(test_loader, network))
                 test_loss_per_datapoint_cliffs_list.append(compute_bce_loss_per_datapoint(test_loader_cliffs, network))
+                test_loss_per_datapoint_non_cliffs_list.append(compute_bce_loss_per_datapoint(test_loader_non_cliffs, network))
 
                 torch.save(network, 'models/' + dataset_folder + '/' +
                            model_name + "_seed" + str(current_seed) + ".pt")
@@ -998,18 +1018,9 @@ if __name__ == "__main__":
             save_results_test_cliff_groups(
                 cliff_group_results, model_name=model_name)
             
-            test_loss_per_datapoint_cliffs_list = np.array(test_loss_per_datapoint_cliffs_list)
-            mean_loss_per_datapoint = np.mean(test_loss_per_datapoint_cliffs_list, axis=0)
-            std_loss_per_datapoint = np.std(test_loss_per_datapoint_cliffs_list, axis=0)
-
-            df = pd.DataFrame({
-                "Loss_mean": mean_loss_per_datapoint,
-                "Loss_std": std_loss_per_datapoint
-            })
-
-            csv_filename = f"results/" + dataset_folder + f"/Loss_Per_Datapoint_Test_{model_name}.csv"
-            df.to_csv(csv_filename, index=False)
-
+            save_mean_loss_test_per_datapoint(test_loss_per_datapoint_list, cliff_text="", model_name=model_name)
+            save_mean_loss_test_per_datapoint(test_loss_per_datapoint_cliffs_list, cliff_text="_Cliffs", model_name=model_name)
+            save_mean_loss_test_per_datapoint(test_loss_per_datapoint_non_cliffs_list, cliff_text="_Non_Cliffs", model_name=model_name)
 
 
         if False:
