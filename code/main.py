@@ -267,6 +267,8 @@ def train_wandb(config=None):
                             use_contrastive_learning=use_contrastive_learning, seed=config.current_seed)
 
         wandb.log({
+            "epoch": epoch,
+
             "train_loss_" + str(config.current_seed): train_results["Loss"].item(),
             "train_accuracy_" + str(config.current_seed): train_results["Accuracy"].item(),
             "train_precision_" + str(config.current_seed): train_results["Precision"].item(),
@@ -392,8 +394,8 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
 
             if tune_wandb:
                 wandb.log({
-                    "bce_loss_batch": basic_loss,
-                    "triplet_loss_batch": triplet_loss
+                    "bce_loss_batch_" + str(seed): basic_loss,
+                    "triplet_loss_batch_" + str(seed): triplet_loss
                 })
             else:
                 train_triplet_losses.append(
@@ -411,7 +413,7 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
 
         if tune_wandb:
             wandb.log({
-                "total_loss_batch": loss,
+                "total_loss_batch_" + str(seed): loss,
             })
         else:
             train_losses_total.append(loss.cpu().detach().numpy())
@@ -437,7 +439,7 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
 
 def run_sweep(sweep_id, fcn, count):
     # TODO: create docstring
-    wandb.agent(sweep_id, function=fcn, count=count)
+    wandb.agent(sweep_id, function=fcn, count=count, project="ActivityCliffs", entity="lisakr")
 
 
 def log_avg_results(set_name, results, results_cliffs, results_non_cliffs):
@@ -658,7 +660,7 @@ def create_sweep_config():
             'values': [56, 128]
         },
         'n_hidden_layers': {
-            'values': [2, 3, 4, 6]
+            'values': [2, 3, 4, 5, 6]
         },
         'n_hidden_units': {
             'values': [1024, 768, 512, 256, 128]
@@ -667,10 +669,10 @@ def create_sweep_config():
             'values': ["relu", "selu", "leaky_relu"]
         },
         'input_dropout': {
-            'values': [0., 0.1, 0.2, 0.5, 0.6, 0.7]
+            'values': [0., 0.1, 0.2, 0.3, 0.5, 0.7]
         },
         'dropout': {
-            'values': [0., 0.1, 0.2, 0.3, 0.5]
+            'values': [0., 0.1, 0.2, 0.3, 0.5, 0.7]
         },
         'alpha': {
             'min': 0.1,
@@ -686,9 +688,9 @@ def create_sweep_config():
     return sweep_config
 
 
-def run_sweep(sweep_id, fcn, count):
-    # TODO: create docstring
-    wandb.agent(sweep_id, function=fcn, count=count)
+# def run_sweep(sweep_id, fcn, count):
+#     # TODO: create docstring
+#     wandb.agent(sweep_id, function=fcn, count=count)
 
 
 def run_sweep_multiple_seeds(config=None):
@@ -768,11 +770,11 @@ def run_sweep_multiple_seeds(config=None):
 
 perform_add_preprocessing = False
 
-# CHEMBL214_Ki
-# CHEMBL233_Ki
-# CHEMBL234_Ki
-# CHEMBL244_Ki
-# CHEMBL264_Ki
+# CHEMBL214_Ki, 3317 entries (tuned)
+# CHEMBL233_Ki, 3142 entries
+# CHEMBL234_Ki, 3657 entries (tuned)
+# CHEMBL244_Ki, 3097 entries
+# CHEMBL264_Ki, 2862 entries
 dataset_folder = "CHEMBL234_Ki"
 
 df, df_train, df_val, df_test = preprocessing.preprocess_data(
@@ -785,8 +787,8 @@ train_eval_rf = False
 # choose from: 'MLP', 'MLP Triplet Manhattan', 'MLP Triplet Cosine', None
 load_model = None  # from seed-run 12
 
-use_contrastive_learning = False
-use_cosine_sim = False
+use_contrastive_learning = True
+use_cosine_sim = True
 
 train_losses_total = []
 train_triplet_losses = []
@@ -799,48 +801,49 @@ if __name__ == "__main__":
     if tune_wandb:
         wandb.login()
         sweep_config = create_sweep_config()
-        sweep_id = wandb.sweep(sweep_config, project="ActivityCliffs")
+        #sweep_id = wandb.sweep(sweep_config, project="ActivityCliffs")
+        sweep_id = "uom9tt5r"
 
-        run_sweep(sweep_id, run_sweep_multiple_seeds, 1)
+        run_sweep(sweep_id, run_sweep_multiple_seeds, 15)
 
     else:
 
         configs = [
             {  # MLP BCE CHEMBL234_Ki
                 'optimizer': 'adam',
-                'epochs': 16,
-                'learning_rate': 0.0041,
-                'batch_size': 32,
-                'n_hidden_layers': 2,
-                'n_hidden_units': 1000,
-                'activation_function': 'leaky_relu',
-                'input_dropout': 0.5,
-                'dropout': 0.25,
-                'alpha': 0.0
+                'epochs': 22,
+                'learning_rate': 0.0601,
+                'batch_size': 128,
+                'n_hidden_layers': 4,
+                'n_hidden_units': 768,
+                'activation_function': 'selu',
+                'input_dropout': 0.1,
+                'dropout': 0.3,
+                'alpha': 1.3461
             },
             {  # MLP Manhattan CHEMBL234_Ki
                 'optimizer': 'adam',
-                'epochs': 34,
-                'learning_rate': 0.0228,
-                'batch_size': 128,
-                'n_hidden_layers': 6,
+                'epochs': 22,
+                'learning_rate': 0.0105,
+                'batch_size': 56,
+                'n_hidden_layers': 2,
                 'n_hidden_units': 128,
                 'activation_function': 'relu',
-                'input_dropout': 0.2,
-                'dropout': 0.1,
-                'alpha': 0.5405
+                'input_dropout': 0.0,
+                'dropout': 0.3,
+                'alpha': 1.1719
             },
             {  # MLP Cosine CHEMBL234_Ki
                 'optimizer': 'adam',
-                'epochs': 26,
-                'learning_rate': 0.1192,
-                'batch_size': 128,
+                'epochs': 20,
+                'learning_rate': 0.0079,
+                'batch_size': 56,
                 'n_hidden_layers': 4,
-                'n_hidden_units': 128,
+                'n_hidden_units': 768,
                 'activation_function': 'leaky_relu',
-                'input_dropout': 0.7,
-                'dropout': 0.1,
-                'alpha': 1.4944
+                'input_dropout': 0.3,
+                'dropout': 0.2,
+                'alpha': 0.3946
             }
         ]
 
@@ -887,14 +890,14 @@ if __name__ == "__main__":
             # config_dict = {  # TODO: delete or refactor
             #     'optimizer': 'adam',
             #     'epochs': 20,
-            #     'learning_rate': 0.507491509069661,
-            #     'batch_size': 128,
+            #     'learning_rate': 0.12615546257688678,
+            #     'batch_size': 56,
             #     'n_hidden_layers': 6,
-            #     'n_hidden_units': 256,
-            #     'activation_function': 'selu',
-            #     'input_dropout': 0.6,
-            #     'dropout': 0.2,
-            #     'alpha': 0.8457691803134341,
+            #     'n_hidden_units': 128,
+            #     'activation_function': 'relu',
+            #     'input_dropout': 0.5,
+            #     'dropout': 0.1,
+            #     'alpha': 1.035752929172325,
             #     'margin': 1.,
             # }
 
@@ -979,7 +982,8 @@ if __name__ == "__main__":
             save_results_test_cliff_groups(
                 cliff_group_results, model_name=model_name)
 
-        if load_model is None and not train_eval_rf:
+        if False:
+        #if load_model is None and not train_eval_rf:
             fig, axes = plt.subplots(2, 2, figsize=(10, 7))
 
             axes[0, 0].plot(train_losses_total)
