@@ -522,7 +522,7 @@ def print_save_results(set_name, results, results_cliffs, results_non_cliffs, sa
             ])
 
         if save_to_csv:
-            with open(f"results/Results_{set_name}_{model_name}.csv", mode="w", newline="") as csv_file:
+            with open(f"results/" + dataset_folder + f"/Results_{set_name}_{model_name}.csv", mode="w", newline="") as csv_file:
                 writer = csv.writer(csv_file)
                 writer.writerow(header)  # Write the header
                 writer.writerows(data)
@@ -548,7 +548,7 @@ def save_results_test_cliff_groups(cliff_group_results, model_name):
             mean['Balanced Accuracy'], std['Balanced Accuracy'],
         ])
 
-    with open(f"results/Results_Cliff_Groups_Test_{model_name}.csv", mode="w", newline="") as csv_file:
+    with open(f"results/" + dataset_folder + "/Results_Cliff_Groups_Test_{model_name}.csv", mode="w", newline="") as csv_file:
         writer = csv.writer(csv_file)
         header = [
             "Cliff_Group",
@@ -562,6 +562,37 @@ def save_results_test_cliff_groups(cliff_group_results, model_name):
         ]
         writer.writerow(header)
         writer.writerows(data)
+
+
+def compute_bce_loss_per_datapoint(loader, network, train_loader=False):
+    # TODO: add docstring
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    network.eval()
+
+    with torch.no_grad():
+        outputs_total = []
+        targets_total = []
+        for batch in tqdm(loader):
+            if not train_loader or not use_contrastive_learning:
+                samples, targets = batch
+            else:
+                samples, targets, _, _ = batch
+
+            samples = samples.to(device)
+            targets = targets.to(device)
+
+            outputs, emb = network(samples)
+            outputs = outputs.squeeze(dim=1)
+            outputs_total.append(outputs.cpu())
+            targets_total.append(targets.cpu())
+
+        outputs_total = torch.cat(outputs_total, dim=0)
+        targets_total = torch.cat(targets_total, dim=0)
+
+        losses = nn.BCEWithLogitsLoss(reduction='none')(outputs_total, targets_total)
+
+        return np.array([loss.item() for loss in losses])
 
 
 def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train_loader=False):
@@ -865,6 +896,8 @@ if __name__ == "__main__":
         test_cliffs_results_list = []
         test_non_cliffs_results_list = []
 
+        test_loss_per_datapoint_cliffs_list = []
+
         # extract cliff groups of test set
         group_dict = preprocessing.get_cliff_groups_test(
             "data/" + dataset_folder + "/df_test.csv")
@@ -881,25 +914,6 @@ if __name__ == "__main__":
         cliff_group_results = dict()
 
         for current_seed in [7, 12, 39, 68, 94]:
-
-            # np.random.seed(current_seed)
-            # random.seed(current_seed)
-            # torch.manual_seed(current_seed)
-            # torch.random.manual_seed(current_seed)
-
-            # config_dict = {  # TODO: delete or refactor
-            #     'optimizer': 'adam',
-            #     'epochs': 20,
-            #     'learning_rate': 0.12615546257688678,
-            #     'batch_size': 56,
-            #     'n_hidden_layers': 6,
-            #     'n_hidden_units': 128,
-            #     'activation_function': 'relu',
-            #     'input_dropout': 0.5,
-            #     'dropout': 0.1,
-            #     'alpha': 1.035752929172325,
-            #     'margin': 1.,
-            # }
 
             train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = build_dataset(
                 config_dict['batch_size'], seed=current_seed, use_contrastive_learning=False)
@@ -934,6 +948,8 @@ if __name__ == "__main__":
                     test_loader_cliffs, network)
                 test_non_cliffs_results = compute_metrics(
                     test_loader_non_cliffs, network)
+                
+                test_loss_per_datapoint_cliffs_list.append(compute_bce_loss_per_datapoint(test_loader_cliffs, network))
 
                 torch.save(network, 'models/' + dataset_folder + '/' +
                            model_name + "_seed" + str(current_seed) + ".pt")
@@ -981,6 +997,20 @@ if __name__ == "__main__":
         if not train_eval_rf:
             save_results_test_cliff_groups(
                 cliff_group_results, model_name=model_name)
+            
+            test_loss_per_datapoint_cliffs_list = np.array(test_loss_per_datapoint_cliffs_list)
+            mean_loss_per_datapoint = np.mean(test_loss_per_datapoint_cliffs_list, axis=0)
+            std_loss_per_datapoint = np.std(test_loss_per_datapoint_cliffs_list, axis=0)
+
+            df = pd.DataFrame({
+                "Loss_mean": mean_loss_per_datapoint,
+                "Loss_std": std_loss_per_datapoint
+            })
+
+            csv_filename = f"results/" + dataset_folder + f"/Loss_Per_Datapoint_Test_{model_name}.csv"
+            df.to_csv(csv_filename, index=False)
+
+
 
         if False:
         #if load_model is None and not train_eval_rf:
