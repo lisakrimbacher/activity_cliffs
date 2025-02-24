@@ -564,6 +564,43 @@ def save_results_test_cliff_groups(cliff_group_results, model_name):
         writer.writerow(header)
         writer.writerows(data)
 
+# TODO: merge this function with save_results_test_cliff_groups
+def save_results_test_clusters(clusters_results, model_name, cliff_text):
+    data = []
+
+    for i, results in clusters_results.items():
+        df_combined = pd.concat(results, axis=0)
+
+        mean = df_combined.mean(axis=0)
+        std = df_combined.std(axis=0)
+
+        data.append([
+            i,
+            mean['Loss'], std['Loss'],
+            mean['ROC-AUC'], std['ROC-AUC'],
+            mean['Accuracy'], std['Accuracy'],
+            mean['Precision'], std['Precision'],
+            mean['Recall'], std['Recall'],
+            mean['F1-Score'], std['F1-Score'],
+            mean['Balanced Accuracy'], std['Balanced Accuracy'],
+        ])
+
+    with open(f"results/" + dataset_folder + f"/Results_Clusters_Test{cliff_text}_{model_name}.csv", mode="w", newline="") as csv_file:
+        writer = csv.writer(csv_file)
+        header = [
+            "Cluster",
+            "Loss_mean", "Loss_std",
+            "ROC-AUC_mean", "ROC-AUC_std",
+            "Accuracy_mean", "Accuracy_std",
+            "Precision_mean", "Precision_std",
+            "Recall_mean", "Recall_std",
+            "F1-Score_mean", "F1-Score_std",
+            "Balanced_Accuracy_mean", "Balanced_Accuracy_std",
+        ]
+        writer.writerow(header)
+        writer.writerows(data)
+
+
 
 def compute_bce_loss_per_datapoint(loader, network, train_loader=False):
     # TODO: add docstring
@@ -963,6 +1000,13 @@ if __name__ == "__main__":
         test_loss_per_datapoint_cliffs_list = []
         test_loss_per_datapoint_non_cliffs_list = []
 
+        test_results_per_cluster_list = dict()
+        test_results_per_cluster_cliffs_list = dict()
+        test_results_per_cluster_non_cliffs_list = dict()
+
+        import os
+        lables_clustering = np.load(f"results/{dataset_folder}/Clustering_Labels.npy")
+
         # extract cliff groups of test set
         group_dict = preprocessing.get_cliff_groups_test(
             "data/" + dataset_folder + "/df_test.csv")
@@ -1037,6 +1081,43 @@ if __name__ == "__main__":
                     results = compute_metrics(loader, network)
                     cliff_group_results[i].append(results)
 
+                for cluster_id in set(lables_clustering):
+                    if (cluster_id not in test_results_per_cluster_list):
+                        test_results_per_cluster_list[cluster_id] = []
+
+                    df_curr_cluster = df_test.iloc[np.where(lables_clustering == cluster_id)]
+                    dataset = MoleculeACEDataset(
+                        df_curr_cluster['ecfp'], df_curr_cluster['active'])
+                    loader = DataLoader(dataset, shuffle=True,
+                                        batch_size=config_dict['batch_size'])
+                    results = compute_metrics(loader, network)
+                    test_results_per_cluster_list[cluster_id].append(results)
+
+
+                    if (cluster_id not in test_results_per_cluster_cliffs_list):
+                        test_results_per_cluster_cliffs_list[cluster_id] = []
+
+                    df_filtered = df_curr_cluster[df_curr_cluster["cliff_mol_binary"] == 1]
+                    dataset = MoleculeACEDataset(
+                        df_filtered['ecfp'], df_filtered['active'])
+                    loader = DataLoader(dataset, shuffle=True,
+                                        batch_size=config_dict['batch_size'])
+                    results = compute_metrics(loader, network)
+                    test_results_per_cluster_cliffs_list[cluster_id].append(results)       
+
+                    if (cluster_id not in test_results_per_cluster_non_cliffs_list):
+                        test_results_per_cluster_non_cliffs_list[cluster_id] = []
+
+                    df_filtered = df_curr_cluster[df_curr_cluster["cliff_mol_binary"] == 0]
+                    dataset = MoleculeACEDataset(
+                        df_filtered['ecfp'], df_filtered['active'])
+                    loader = DataLoader(dataset, shuffle=True,
+                                        batch_size=config_dict['batch_size'])
+                    results = compute_metrics(loader, network)
+                    test_results_per_cluster_non_cliffs_list[cluster_id].append(results)               
+
+                    
+
             val_results_list.append(val_results)
             val_cliffs_results_list.append(val_cliffs_results)
             val_non_cliffs_results_list.append(val_non_cliffs_results)
@@ -1074,6 +1155,13 @@ if __name__ == "__main__":
                 test_loss_per_datapoint_cliffs_list, cliff_text="_Cliffs", model_name=model_name)
             save_mean_loss_test_per_datapoint(
                 test_loss_per_datapoint_non_cliffs_list, cliff_text="_Non_Cliffs", model_name=model_name)
+            
+            save_results_test_clusters(
+                test_results_per_cluster_list, model_name=model_name, cliff_text="")
+            save_results_test_clusters(
+                test_results_per_cluster_cliffs_list, model_name=model_name, cliff_text="_Cliffs")
+            save_results_test_clusters(
+                test_results_per_cluster_non_cliffs_list, model_name=model_name, cliff_text="_Non_Cliffs")
 
         if False:
             # if load_model is None and not train_eval_rf:
