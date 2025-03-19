@@ -59,6 +59,7 @@ def initial_preprocessing(path, threshold, radius, nBits):
 
     return df
 
+
 def label_activity_cliffs(df_train, df_val, df_test):
     """ 
     Labels molecules in the corresponding sets as activity cliffs.
@@ -169,8 +170,17 @@ def normalize_ecfps(df_train, df_val, df_test):
 
     return df_train, df_val, df_test
 
-# TODO: description
-def get_cliff_groups_test(path_to_test = "data/CHEMBL234_Ki/df_test.csv"):
+
+def get_cliff_groups_test(path_to_test="data/CHEMBL234_Ki/df_test.csv"):
+    """
+    Extracts each activity cliff as cliff groups, where all affected molecules are included.
+
+    Parameters:
+        - path (string): Path to the dataset.
+
+    Returns:
+        dict: Cliff groups with group indices (keys) and molecule indices (values)
+    """
     df = pd.read_csv(path_to_test)
     group_dict = dict()
     next_group_idx = 0
@@ -197,8 +207,17 @@ def get_cliff_groups_test(path_to_test = "data/CHEMBL234_Ki/df_test.csv"):
 
     return merge_overlapping_sets(group_dict)
 
-# TODO: description
+
 def merge_overlapping_sets(group_dict):
+    """
+    Merges overlapping cliff groups into one.
+
+    Parameters:
+        - group_dict (string): Cliff group dictionary
+
+    Returns:
+        dict: Non-overlapping cliff groups with group indices (keys) and molecule indices (values)
+    """
     keys = list(group_dict.keys())
     merged_sets = []
 
@@ -213,9 +232,11 @@ def merge_overlapping_sets(group_dict):
             merged_sets.append(group_dict[key])
 
     # reassign merged sets to a new dictionary with sequential keys
-    merged_dict = {idx: merged_set for idx, merged_set in enumerate(merged_sets)}
+    merged_dict = {idx: merged_set for idx,
+                   merged_set in enumerate(merged_sets)}
 
     return merged_dict
+
 
 def preprocess_data(perform_add_preprocessing, dataset_folder):
     """
@@ -242,7 +263,8 @@ def preprocess_data(perform_add_preprocessing, dataset_folder):
         df_train, df_val, df_test = split_data(df)
         df_train, df_val, df_test = normalize_ecfps(df_train, df_val, df_test)
         df_train, df_val, df_test = reset_indices(df_train, df_val, df_test)
-        df_train, df_val, df_test = label_activity_cliffs(df_train, df_val, df_test)
+        df_train, df_val, df_test = label_activity_cliffs(
+            df_train, df_val, df_test)
 
         similarities = cliffs_van_tilborg_et_al.moleculeace_similarity(
             df_train['smiles'])  # no self-similarity, i. e. similarity[i, i] == 0
@@ -281,9 +303,12 @@ def preprocess_data(perform_add_preprocessing, dataset_folder):
             lambda x: json.dumps(x.tolist() if isinstance(x, np.ndarray) else x))
 
         df_save.to_csv(r'data/' + dataset_folder + '/df.csv', index=False)
-        df_train_save.to_csv(r'data/' + dataset_folder + '/df_train.csv', index=False)
-        df_val_save.to_csv(r'data/' + dataset_folder + '/df_val.csv', index=False)
-        df_test_save.to_csv(r'data/' + dataset_folder + '/df_test.csv', index=False)
+        df_train_save.to_csv(r'data/' + dataset_folder +
+                             '/df_train.csv', index=False)
+        df_val_save.to_csv(r'data/' + dataset_folder +
+                           '/df_val.csv', index=False)
+        df_test_save.to_csv(r'data/' + dataset_folder +
+                            '/df_test.csv', index=False)
 
     else:
 
