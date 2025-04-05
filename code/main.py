@@ -3,7 +3,7 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, balanced_accuracy_score
+from sklearn.metrics import accuracy_score, log_loss, precision_score, recall_score, f1_score, roc_auc_score, balanced_accuracy_score
 import matplotlib.pyplot as plt
 import random
 import pandas as pd
@@ -423,13 +423,13 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
         optimizer.step()
 
     train_results = compute_metrics(
-        train_loader, network, train_loader=True)
+        train_loader, network, train_loader=True, rf=train_eval_rf)
     val_results = compute_metrics(
-        val_loader, network)
+        val_loader, network, rf=train_eval_rf)
     val_cliffs_results = \
-        compute_metrics(val_loader_cliffs, network)
+        compute_metrics(val_loader_cliffs, network, rf=train_eval_rf)
     val_non_cliffs_results = \
-        compute_metrics(val_loader_non_cliffs, network)
+        compute_metrics(val_loader_non_cliffs, network, rf=train_eval_rf)
 
     if not tune_wandb:
         val_losses.append(val_results["Loss"][0])
@@ -602,36 +602,66 @@ def save_results_test_clusters(clusters_results, model_name, cliff_text):
 
 
 
-def compute_bce_loss_per_datapoint(loader, network, train_loader=False):
+def compute_bce_loss_per_datapoint(loader, network, train_loader=False, rf=False):
     # TODO: add docstring
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    network.eval()
+    if not rf:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        network.eval()
 
-    with torch.no_grad():
-        outputs_total = []
-        targets_total = []
-        for batch in tqdm(loader):
+        with torch.no_grad():
+            outputs_total = []
+            targets_total = []
+            for batch in tqdm(loader):
+                if not train_loader or not use_contrastive_learning:
+                    samples, targets = batch
+                else:
+                    samples, targets, _, _ = batch
+
+                samples = samples.to(device)
+                targets = targets.to(device)
+
+                outputs, emb = network(samples)
+                outputs = outputs.squeeze(dim=1)
+                outputs_total.append(outputs.cpu())
+                targets_total.append(targets.cpu())
+
+            outputs_total = torch.cat(outputs_total, dim=0)
+            targets_total = torch.cat(targets_total, dim=0)
+
+            losses = nn.BCEWithLogitsLoss(reduction='none')(
+                outputs_total, targets_total)
+
+            return np.array([loss.item() for loss in losses])
+        
+    else:
+        X = []
+        y = []
+        
+        for batch in loader:
             if not train_loader or not use_contrastive_learning:
                 samples, targets = batch
             else:
                 samples, targets, _, _ = batch
 
-            samples = samples.to(device)
-            targets = targets.to(device)
+            samples_flat = samples.view(samples.size(0), -1).numpy()
+            targets_np = targets.numpy()
 
-            outputs, emb = network(samples)
-            outputs = outputs.squeeze(dim=1)
-            outputs_total.append(outputs.cpu())
-            targets_total.append(targets.cpu())
+            X.extend(samples_flat)
+            y.extend(targets_np)
 
-        outputs_total = torch.cat(outputs_total, dim=0)
-        targets_total = torch.cat(targets_total, dim=0)
+        X_np = np.array(X)
+        y_np = np.array(y).astype(float)
+        
+        probas = network.predict_proba(X_np)[:, 1]
+        
+        per_sample_loss = []
+        for true_label, prob in zip(y_np, probas):
+            loss = log_loss([true_label], [prob], labels=[0, 1])
+            per_sample_loss.append(loss)
+            
+        return np.array(per_sample_loss)
 
-        losses = nn.BCEWithLogitsLoss(reduction='none')(
-            outputs_total, targets_total)
-
-        return np.array([loss.item() for loss in losses])
 
 
 def save_mean_loss_test_per_datapoint(loss_data, model_name, cliff_text):
@@ -651,69 +681,101 @@ def save_mean_loss_test_per_datapoint(loss_data, model_name, cliff_text):
     df.to_csv(csv_filename, index=False)
 
 
-def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train_loader=False):
+def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train_loader=False, rf=False):
     """
     Computes various performance metrics of a network.
 
     Parameters:
         loader (torch.utils.data.DataLoader): DataLoader with data to evaluate network on.
-        network (torch.nn.Module): Network to be evaluated.
+        network (torch.nn.Module): Network to be evaluated. TODO: add RF
         loss_function (Callable): Loss function to be used for loss computation.
         train_loader (bool): Whether given loader is a Train loader.
+        TODO: add RF
 
     Returns:
         various metrics (float)
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    network.eval()
+    if not rf:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        network.eval()
 
-    with torch.no_grad():
-        outputs_total = []
-        targets_total = []
-        for batch in tqdm(loader):
+        with torch.no_grad():
+            outputs_total = []
+            targets_total = []
+            for batch in tqdm(loader):
+                if not train_loader or not use_contrastive_learning:
+                    samples, targets = batch
+                else:
+                    samples, targets, _, _ = batch
+
+                samples = samples.to(device)
+                targets = targets.to(device)
+
+                outputs, emb = network(samples)
+                outputs = outputs.squeeze(dim=1)
+                outputs_total.append(outputs.cpu())
+                targets_total.append(targets.cpu())
+
+            outputs_total = torch.cat(outputs_total, dim=0)
+            targets_total = torch.cat(targets_total, dim=0)
+
+            loss = loss_function(outputs_total, targets_total).item()
+
+            probabilities = torch.sigmoid(outputs_total)
+            predictions = (probabilities >= 0.5).float()
+
+            predictions_np = predictions.numpy()
+            targets_np = targets_total.numpy()
+            probabilities_np = probabilities.numpy()
+
+            accuracy = accuracy_score(targets_np, predictions_np)
+            precision = precision_score(targets_np, predictions_np)
+            recall = recall_score(targets_np, predictions_np)
+            f1 = f1_score(targets_np, predictions_np)
+            roc_auc = roc_auc_score(targets_np, probabilities_np)
+            balanced_acc = balanced_accuracy_score(targets_np, predictions_np)
+
+    else:
+        X = []
+        y = []
+
+        for batch in loader:
             if not train_loader or not use_contrastive_learning:
                 samples, targets = batch
             else:
                 samples, targets, _, _ = batch
 
-            samples = samples.to(device)
-            targets = targets.to(device)
+            samples = samples.numpy()
+            targets = targets.numpy()
 
-            outputs, emb = network(samples)
-            outputs = outputs.squeeze(dim=1)
-            outputs_total.append(outputs.cpu())
-            targets_total.append(targets.cpu())
+            X.extend(samples)
+            y.extend(targets)
 
-        outputs_total = torch.cat(outputs_total, dim=0)
-        targets_total = torch.cat(targets_total, dim=0)
+        X_np = np.array(X)
+        y_np = np.array(y)
 
-        loss = loss_function(outputs_total, targets_total)
+        preds = network.predict(X_np)
+        preds_proba = network.predict_proba(X_np)[:, 1]
 
-        probabilities = torch.sigmoid(outputs_total)
-        predictions = (probabilities >= 0.5).float()
+        loss = log_loss(y_np, preds_proba)
+        accuracy = accuracy_score(y_np, preds)
+        precision = precision_score(y_np, preds)
+        recall = recall_score(y_np, preds)
+        f1 = f1_score(y_np, preds)
+        balanced_acc = balanced_accuracy_score(y_np, preds)
+        roc_auc = roc_auc_score(y_np, preds_proba)
 
-        predictions_np = predictions.numpy()
-        targets_np = targets_total.numpy()
-        probabilities_np = probabilities.numpy()
+    results = {
+        "Loss": loss,
+        "Accuracy": accuracy,
+        "Precision": precision,
+        "Recall": recall,
+        "F1-Score": f1,
+        "ROC-AUC": roc_auc,
+        "Balanced Accuracy": balanced_acc
+    }
 
-        accuracy = accuracy_score(targets_np, predictions_np)
-        precision = precision_score(targets_np, predictions_np)
-        recall = recall_score(targets_np, predictions_np)
-        f1 = f1_score(targets_np, predictions_np)
-        roc_auc = roc_auc_score(targets_np, probabilities_np)
-        balanced_acc = balanced_accuracy_score(targets_np, predictions_np)
-
-        results = {
-            "Loss": loss.item(),
-            "Accuracy": accuracy,
-            "Precision": precision,
-            "Recall": recall,
-            "F1-Score": f1,
-            "ROC-AUC": roc_auc,
-            "Balanced Accuracy": balanced_acc
-        }
-
-        return pd.DataFrame([results])
+    return pd.DataFrame([results])
 
 
 def create_sweep_config():
@@ -817,15 +879,15 @@ def run_sweep_multiple_seeds(config=None):
         #     wandb.config)
         network = train_wandb(wandb.config)
 
-        val_results = compute_metrics(val_loader, network)
-        val_cliffs_results = compute_metrics(val_loader_cliffs, network)
+        val_results = compute_metrics(val_loader, network, rf=train_eval_rf)
+        val_cliffs_results = compute_metrics(val_loader_cliffs, network, rf=train_eval_rf)
         val_non_cliffs_results = compute_metrics(
-            val_loader_non_cliffs, network)
+            val_loader_non_cliffs, network, rf=train_eval_rf)
 
-        test_results = compute_metrics(test_loader, network)
-        test_cliffs_results = compute_metrics(test_loader_cliffs, network)
+        test_results = compute_metrics(test_loader, network, rf=train_eval_rf)
+        test_cliffs_results = compute_metrics(test_loader_cliffs, network, rf=train_eval_rf)
         test_non_cliffs_results = compute_metrics(
-            test_loader_non_cliffs, network)
+            test_loader_non_cliffs, network, rf=train_eval_rf)
 
         val_results_list.append(val_results)
         val_cliffs_results_list.append(val_cliffs_results)
@@ -859,10 +921,10 @@ perform_add_preprocessing = False
 
 # CHEMBL214_Ki, 3317 entries (tuned)
 # CHEMBL233_Ki, 3142 entries
-# CHEMBL234_Ki, 3657 entries (tuned)
+# CHEMBL234_Ki, 3657 entries (tuned, main dataset)
 # CHEMBL244_Ki, 3097 entries
 # CHEMBL264_Ki, 2862 entries
-dataset_folder = "CHEMBL214_Ki"
+dataset_folder = "CHEMBL234_Ki"
 
 df, df_train, df_val, df_test = preprocessing.preprocess_data(
     perform_add_preprocessing, dataset_folder=dataset_folder)
@@ -895,7 +957,7 @@ all_configs = {
             'activation_function': 'selu',
             'input_dropout': 0.1,
             'dropout': 0.3,
-            'alpha': 1.3461
+            'alpha': 1.3461  # TODO: check if alpha doesnt do anything!
         },
         {  # MLP Manhattan
             'optimizer': 'adam',
@@ -979,7 +1041,10 @@ if __name__ == "__main__":
         configs = all_configs[dataset_folder]
 
         if (not load_model):
-            if (use_contrastive_learning and use_cosine_sim):
+            if (train_eval_rf):
+                model_name = "RF"
+                config_dict = {'batch_size': 128}
+            elif (use_contrastive_learning and use_cosine_sim):
                 model_name = "MLP_Cosine"
                 config_dict = configs[2]
             elif (use_contrastive_learning and not use_cosine_sim):
@@ -1004,7 +1069,6 @@ if __name__ == "__main__":
         test_results_per_cluster_cliffs_list = dict()
         test_results_per_cluster_non_cliffs_list = dict()
 
-        import os
         lables_clustering = np.load(f"results/{dataset_folder}/Clustering_Labels.npy")
 
         # extract cliff groups of test set
@@ -1027,8 +1091,7 @@ if __name__ == "__main__":
             train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = build_dataset(
                 config_dict['batch_size'], seed=current_seed, use_contrastive_learning=False)
             if train_eval_rf:
-                model_name = "RF"
-                val_results, val_cliffs_results, val_non_cliffs_results, test_results, test_cliffs_results, test_non_cliffs_results = train_rf(train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs,
+                network, val_results, val_cliffs_results, val_non_cliffs_results, test_results, test_cliffs_results, test_non_cliffs_results = train_rf(train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs,
                                                                                                                                                test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs)
             else:
                 if load_model is None:
@@ -1046,29 +1109,29 @@ if __name__ == "__main__":
                 else:
                     raise Exception("invalid flag combination")
 
-                val_results = compute_metrics(val_loader, network)
+                val_results = compute_metrics(val_loader, network, rf=train_eval_rf)
                 val_cliffs_results = compute_metrics(
-                    val_loader_cliffs, network)
+                    val_loader_cliffs, network, rf=train_eval_rf)
                 val_non_cliffs_results = compute_metrics(
-                    val_loader_non_cliffs, network)
+                    val_loader_non_cliffs, network, rf=train_eval_rf)
 
                 test_results = compute_metrics(test_loader, network)
                 test_cliffs_results = compute_metrics(
-                    test_loader_cliffs, network)
+                    test_loader_cliffs, network, rf=train_eval_rf)
                 test_non_cliffs_results = compute_metrics(
-                    test_loader_non_cliffs, network)
-
-                test_loss_per_datapoint_list.append(
-                    compute_bce_loss_per_datapoint(test_loader, network))
-                test_loss_per_datapoint_cliffs_list.append(
-                    compute_bce_loss_per_datapoint(test_loader_cliffs, network))
-                test_loss_per_datapoint_non_cliffs_list.append(
-                    compute_bce_loss_per_datapoint(test_loader_non_cliffs, network))
-
+                    test_loader_non_cliffs, network, rf=train_eval_rf)
+                
                 torch.save(network, 'models/' + dataset_folder + '/' +
                            model_name + "_seed" + str(current_seed) + ".pt")
 
-            if not train_eval_rf:
+            test_loss_per_datapoint_list.append(
+                compute_bce_loss_per_datapoint(test_loader, network, rf=train_eval_rf))
+            test_loss_per_datapoint_cliffs_list.append(
+                compute_bce_loss_per_datapoint(test_loader_cliffs, network, rf=train_eval_rf))
+            test_loss_per_datapoint_non_cliffs_list.append(
+                compute_bce_loss_per_datapoint(test_loader_non_cliffs, network, rf=train_eval_rf))
+
+            if True:#not train_eval_rf:
                 for i in range(min(df_test_groups['cliff_group']), max(df_test_groups['cliff_group']) + 1):
                     if (i not in cliff_group_results):
                         cliff_group_results[i] = []
@@ -1078,7 +1141,7 @@ if __name__ == "__main__":
                         filtered_df['ecfp'], filtered_df['active'])
                     loader = DataLoader(dataset, shuffle=True,
                                         batch_size=config_dict['batch_size'])
-                    results = compute_metrics(loader, network)
+                    results = compute_metrics(loader, network, rf=train_eval_rf)
                     cliff_group_results[i].append(results)
 
                 for cluster_id in set(lables_clustering):
@@ -1090,7 +1153,7 @@ if __name__ == "__main__":
                         df_curr_cluster['ecfp'], df_curr_cluster['active'])
                     loader = DataLoader(dataset, shuffle=True,
                                         batch_size=config_dict['batch_size'])
-                    results = compute_metrics(loader, network)
+                    results = compute_metrics(loader, network, rf=train_eval_rf)
                     test_results_per_cluster_list[cluster_id].append(results)
 
 
@@ -1102,7 +1165,7 @@ if __name__ == "__main__":
                         df_filtered['ecfp'], df_filtered['active'])
                     loader = DataLoader(dataset, shuffle=True,
                                         batch_size=config_dict['batch_size'])
-                    results = compute_metrics(loader, network)
+                    results = compute_metrics(loader, network, rf=train_eval_rf)
                     test_results_per_cluster_cliffs_list[cluster_id].append(results)       
 
                     if (cluster_id not in test_results_per_cluster_non_cliffs_list):
@@ -1113,10 +1176,9 @@ if __name__ == "__main__":
                         df_filtered['ecfp'], df_filtered['active'])
                     loader = DataLoader(dataset, shuffle=True,
                                         batch_size=config_dict['batch_size'])
-                    results = compute_metrics(loader, network)
+                    results = compute_metrics(loader, network, rf=train_eval_rf)
                     test_results_per_cluster_non_cliffs_list[cluster_id].append(results)               
 
-                    
 
             val_results_list.append(val_results)
             val_cliffs_results_list.append(val_cliffs_results)
@@ -1145,7 +1207,7 @@ if __name__ == "__main__":
         print_save_results("Test", cumulated_test_results,
                            cumulated_test_cliffs_results, cumulated_test_non_cliffs_results, save_to_csv=True, model_name=model_name)
 
-        if not train_eval_rf:
+        if True:#not train_eval_rf:
             save_results_test_cliff_groups(
                 cliff_group_results, model_name=model_name)
 

@@ -178,14 +178,14 @@ def compute_rf_metrics(rf, X_np, y_np):
         various metrics (float)
     """
     preds = rf.predict(X_np)
+    preds_proba = rf.predict_proba(X_np)[:, 1]
 
-    loss = log_loss(y_np, preds)
+    loss = log_loss(y_np, preds_proba)
     accuracy = accuracy_score(y_np, preds)
     precision = precision_score(y_np, preds)
     recall = recall_score(y_np, preds)
     f1 = f1_score(y_np, preds)
     balanced_acc = balanced_accuracy_score(y_np, preds)
-    preds_proba = rf.predict_proba(X_np)[:, 1]
     roc_auc = roc_auc_score(y_np, preds_proba)
 
     return loss, accuracy, precision, recall, f1, roc_auc, balanced_acc
@@ -301,7 +301,7 @@ def train_rf(train_loader, val_loader, test_loader, train_loader_cliffs, val_loa
             "Balanced Accuracy": test_balanced_acc_non_cliffs
         }
 
-    return pd.DataFrame([val_results]), pd.DataFrame([val_cliffs_results]), pd.DataFrame([val_non_cliffs_results]), pd.DataFrame([test_results]), pd.DataFrame([test_cliffs_results]), pd.DataFrame([test_non_cliffs_results])
+    return rf, pd.DataFrame([val_results]), pd.DataFrame([val_cliffs_results]), pd.DataFrame([val_non_cliffs_results]), pd.DataFrame([test_results]), pd.DataFrame([test_cliffs_results]), pd.DataFrame([test_non_cliffs_results])
 
     # return val_loss, val_accuracy, val_precision, val_recall, val_f1, val_roc_auc, val_balanced_acc, \
     #     val_loss_cliffs, val_accuracy_cliffs, val_precision_cliffs, val_recall_cliffs, val_f1_cliffs, val_roc_auc_cliffs, val_balanced_acc_cliffs, \
