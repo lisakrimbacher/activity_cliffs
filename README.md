@@ -18,7 +18,7 @@ activity_cliffs/
 └── LICENSE                         # MIT license 
 ```
 
-## Reproducing Experiments
+# Reproducing Experiments
 All experiments of the thesis can be reproduced by cloning the repository and running `main.py`. 
 
 ### Select Dataset
@@ -37,19 +37,22 @@ With this configuration, a Random Forest with 100 trees is trained on the select
 train_eval_rf = False
 use_contrastive_learning = False
 ```
-Instead of the Random Forest, this flag combination leads to the training and evaluation of a Multi-layer Perceptron (named MLP BCE in the thesis).
+Instead of the Random Forest, this flag combination leads to the training and evaluation of a Multi-Layer Perceptron (named MLP BCE in the thesis).
 
 ```
 train_eval_rf = False
 use_contrastive_learning = True
 use_cosine_sim = True
 ```
-Here, a Multi-layer Perceptron is trained and tested using a Triplet Loss with the Cosine Similarity (named MLP Triplet in the thesis).
+Here, a Multi-Layer Perceptron is trained and tested using a Triplet Loss with the Cosine Similarity (named MLP Triplet in the thesis).
 
 ```
 train_eval_rf = False
 use_contrastive_learning = True
 use_cosine_sim = False
 ```
-Lastly, this configuration enables the training and evaluation of a Multi-layer Perceptron using a Triplet Loss with the Manhattan Distance (results are not explicitly reported in the thesis).
+Lastly, this configuration enables the training and evaluation of a Multi-Layer Perceptron using a Triplet Loss with the Manhattan Distance (results are not explicitly reported in the thesis).
+
+
+For all Multi-Layer Perceptrons, the best-performing architecture is used for training.
 
