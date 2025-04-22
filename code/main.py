@@ -4,7 +4,6 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn as nn
 from sklearn.metrics import accuracy_score, log_loss, precision_score, recall_score, f1_score, roc_auc_score, balanced_accuracy_score
-import matplotlib.pyplot as plt
 import random
 import pandas as pd
 import csv
@@ -989,7 +988,6 @@ train_losses_total = []
 train_triplet_losses = []
 train_basic_losses = []
 val_losses = []
-
 
 all_configs = {
     "CHEMBL234_Ki": [
