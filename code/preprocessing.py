@@ -246,8 +246,6 @@ def preprocess_data(perform_add_preprocessing, dataset_folder):
         perform_add_preprocessing (bool): True if dataset should be preprocessed (binarization etc.), False if 
             already preprocessed dataframes should be loaded from the data folder.
         dataset_folder (string): Folder name of the dataset.
-        rad (int): The radius used for the ECFP computation (determines the size of the "neighborhood" considered).
-        nB (int): Length (number of Bits) the resulting ECFP should have.
 
     Returns:
         tuple:

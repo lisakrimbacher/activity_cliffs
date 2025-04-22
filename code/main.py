@@ -14,7 +14,7 @@ from model import MoleculeACEDataset, MLP, train_rf
 import preprocessing
 
 
-def build_dataset(batch_size, seed, use_contrastive_learning=False):
+def build_dataset(batch_size, use_contrastive_learning=False):
     """
     Builds DataLoaders for the training, validation and test sets for all molecules and just for activity cliff molecules.
 
@@ -32,12 +32,10 @@ def build_dataset(batch_size, seed, use_contrastive_learning=False):
                 - torch.utils.data.DataLoader: DataLoader for training set (cliff molecules).
                 - torch.utils.data.DataLoader: DataLoader for validation set (cliff molecules).
                 - torch.utils.data.DataLoader: DataLoader for test set (cliff molecules).
+                - torch.utils.data.DataLoader: DataLoader for training set (non-cliff molecules).
+                - torch.utils.data.DataLoader: DataLoader for validation set (non-cliff molecules).
+                - torch.utils.data.DataLoader: DataLoader for test set (non-cliff molecules).
     """
-
-    # np.random.seed(seed)
-    # random.seed(seed)
-    # torch.manual_seed(seed)
-    # torch.random.manual_seed(seed)
 
     cliff_df_train = df_train[df_train['cliff_mol_binary'] == 1]
     cliff_df_val = df_val[df_val['cliff_mol_binary'] == 1]
@@ -47,8 +45,8 @@ def build_dataset(batch_size, seed, use_contrastive_learning=False):
     non_cliff_df_val = df_val[df_val['cliff_mol_binary'] == 0]
     non_cliff_df_test = df_test[df_test['cliff_mol_binary'] == 0]
 
-    # no similar molecules extracted, since these datasets with just cliffs are only used for validation,
-    # not training with triplet loss!
+    # No similar molecules extracted, since these datasets with just cliffs are only used for validation,
+    # not for training!
     train_set_cliffs = MoleculeACEDataset(
         cliff_df_train['ecfp'], cliff_df_train['active'])
     val_set_cliffs = MoleculeACEDataset(
@@ -96,7 +94,7 @@ def build_dataset(batch_size, seed, use_contrastive_learning=False):
 
 
 def build_network(n_hidden_layers=2, n_hidden_units=1024, activation_function=nn.ReLU, input_dropout=0.25,
-                  dropout=0.5, alpha_dropout=False, seed=12):
+                  dropout=0.5, alpha_dropout=False):
     """
     Builds a Multi-layer Perceptron with given hyperparameters.
 
@@ -110,11 +108,6 @@ def build_network(n_hidden_layers=2, n_hidden_units=1024, activation_function=nn
     Returns:
         MLP: Built Multi-layer Perceptron.
     """
-    # np.random.seed(seed)
-    # random.seed(seed)
-    # torch.manual_seed(seed)
-    # torch.random.manual_seed(seed)
-
     network = MLP(n_input_features=2048, n_hidden_layers=n_hidden_layers, n_hidden_units=n_hidden_units,
                   activation_function=activation_function, input_dropout=input_dropout,
                   dropout=dropout, alpha_dropout=alpha_dropout)
@@ -156,6 +149,7 @@ def train(config, use_contrastive_learning=False, use_cosine_sim=False, seed=12)
         use_contrastive_learning (bool): Whether contrastive learning is used.
         use_cosine_sim (bool): Whether Cosine similarity should be used as a distance metric in the Triplet Loss. 
             Has no effect if use_contrastive_learning=False.
+        seed (int): Random seed.
 
     Returns:
         MLP: Trained Multi-layer Perceptron.
@@ -177,11 +171,11 @@ def train(config, use_contrastive_learning=False, use_cosine_sim=False, seed=12)
     torch.random.manual_seed(seed)
 
     loaders = build_dataset(
-        config['batch_size'], seed=seed, use_contrastive_learning=use_contrastive_learning)
+        config['batch_size'], use_contrastive_learning=use_contrastive_learning)
 
     network = build_network(n_hidden_layers=config['n_hidden_layers'], n_hidden_units=config['n_hidden_units'],
                             activation_function=act_fcn,
-                            input_dropout=config['input_dropout'], dropout=config['dropout'], alpha_dropout=alpha_dropout, seed=seed)
+                            input_dropout=config['input_dropout'], dropout=config['dropout'], alpha_dropout=alpha_dropout)
     optimizer = build_optimizer(
         network, config['optimizer'], config['learning_rate'])
 
@@ -193,11 +187,11 @@ def train(config, use_contrastive_learning=False, use_cosine_sim=False, seed=12)
     for epoch in tqdm(range(config['epochs'])):
         if use_contrastive_learning:
             train_results, val_results, val_cliffs_results, val_non_cliffs_results = \
-                train_epoch(epoch, network, loaders, optimizer,
+                train_epoch(network, loaders, optimizer,
                             alpha=config['alpha'], use_contrastive_learning=use_contrastive_learning, use_cosine_sim=use_cosine_sim, seed=seed)
         else:
             train_results, val_results, val_cliffs_results, val_non_cliffs_results = \
-                train_epoch(epoch, network, loaders, optimizer,
+                train_epoch(network, loaders, optimizer,
                             use_contrastive_learning=use_contrastive_learning, seed=seed)
 
         val_loss = val_results["Loss"][0]
@@ -220,11 +214,15 @@ def train(config, use_contrastive_learning=False, use_cosine_sim=False, seed=12)
 
 
 def train_wandb(config=None):
-    # TODO: add docstring
+    """
+    Tunes a Multi-layer Perceptron with given hyperparameters using Weights & Biases.
 
-    # TODO: check use_contrastive_learning, use_cosine_sim, current_seed
+    Parameters:
+        config (wandb.config): Hyperparameter options for the MLP.
 
-    # config = wandb.config
+    Returns:
+        MLP: Trained Multi-layer Perceptron.
+    """
 
     alpha_dropout = True if config.activation_function == "selu" else False
 
@@ -243,11 +241,11 @@ def train_wandb(config=None):
     torch.random.manual_seed(config.current_seed)
 
     loaders = build_dataset(
-        config.batch_size, seed=config.current_seed, use_contrastive_learning=use_contrastive_learning)
+        config.batch_size, use_contrastive_learning=use_contrastive_learning)
 
     network = build_network(n_hidden_layers=config.n_hidden_layers, n_hidden_units=config.n_hidden_units,
                             activation_function=act_fcn,
-                            input_dropout=config.input_dropout, dropout=config.dropout, alpha_dropout=alpha_dropout, seed=config.current_seed)
+                            input_dropout=config.input_dropout, dropout=config.dropout, alpha_dropout=alpha_dropout)
     optimizer = build_optimizer(
         network, config.optimizer, config.learning_rate)
 
@@ -259,11 +257,11 @@ def train_wandb(config=None):
     for epoch in tqdm(range(config['epochs'])):
         if use_contrastive_learning:
             train_results, val_results, val_cliffs_results, val_non_cliffs_results = \
-                train_epoch(epoch, network, loaders, optimizer,
+                train_epoch(network, loaders, optimizer,
                             alpha=config['alpha'], use_contrastive_learning=use_contrastive_learning, use_cosine_sim=use_cosine_sim, seed=config.current_seed)
         else:
             train_results, val_results, val_cliffs_results, val_non_cliffs_results = \
-                train_epoch(epoch, network, loaders, optimizer,
+                train_epoch(network, loaders, optimizer,
                             use_contrastive_learning=use_contrastive_learning, seed=config.current_seed)
 
         wandb.log({
@@ -318,19 +316,15 @@ def train_wandb(config=None):
     print(
         f"\nBest val-loss ({best_val_loss}) in epoch {epoch_best_val_loss}\n")
 
-    # network_path = f"wandb/{dataset_folder}_{run.id}_{config.current_seed}.pt"
-    # torch.save(network, network_path)
-
-    return network  # , *loaders #train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs
+    return network
 
 
-def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss_function=nn.BCEWithLogitsLoss(),
+def train_epoch(network, loaders, optimizer, alpha=0.1, margin=1, loss_function=nn.BCEWithLogitsLoss(),
                 use_contrastive_learning=False, use_cosine_sim=False, seed=12):
     """
     Trains a Multi-layer Perceptron for one epoch.
 
     Parameters:
-        epoch_id (int): Dictionary of hyperparameters.
         network (MLP): Instance of Multi-layer Perceptron class.
         loaders (tuple): Tuple of all DataLoaders.
         optimizer (torch.optim.Optimizer): Optimizer to be used.
@@ -345,11 +339,6 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
     Returns:
         various metrics (float)
     """
-    # np.random.seed(seed + epoch_id)
-    # random.seed(seed + epoch_id)
-    # torch.manual_seed(seed + epoch_id)
-    # torch.random.manual_seed(seed + epoch_id)
-
     train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = loaders
 
     network.train()
@@ -437,13 +426,31 @@ def train_epoch(epoch_id, network, loaders, optimizer, alpha=0.1, margin=1, loss
     return train_results, val_results, val_cliffs_results, val_non_cliffs_results
 
 
-def run_sweep(sweep_id, fcn, count):
-    # TODO: create docstring
+def run_sweep(sweep_id, fcn, count, project, entity):
+    """
+    Trains a Multi-layer Perceptron for one epoch.
+
+    Parameters:
+        sweep_id (string): Sweep ID of the Weights & Biases sweep.
+        fcn (callable): Train function to execute.
+        count (int): Number of runs to execute.
+        project (string): Weights & Biases project.
+        entity (string): Weights & Biases entity.
+    """
     wandb.agent(sweep_id, function=fcn, count=count,
-                project="ActivityCliffs", entity="lisakr")
+                project=project, entity=entity)
 
 
 def log_avg_results(set_name, results, results_cliffs, results_non_cliffs):
+    """
+    Logs mean and standard deviations of perfirmance metrics to Weights & Biases.
+
+    Parameters:
+        set_name (string): Name of the dataset subset ('val', 'test', ...).
+        results (dict): Results on the whole dataset subset.
+        results_cliffs (dict): Results on activity cliffs of the dataset subset.
+        results_non_cliffs (dict): Results on non-cliff molecules of the dataset subset.
+    """
 
     for results_array, label in zip([results, results_non_cliffs, results_cliffs], ["total", "non_cliffs", "cliffs"]):
         mean = np.mean(results_array, axis=0)
@@ -474,6 +481,17 @@ def log_avg_results(set_name, results, results_cliffs, results_non_cliffs):
 
 
 def print_save_results(set_name, results, results_cliffs, results_non_cliffs, save_to_csv, model_name=""):
+    """
+    Print results to the console and save to a CSV file.
+
+    Parameters:
+        set_name (string): Name of the dataset subset ('val', 'test', ...).
+        results (dict): Results on the whole dataset subset.
+        results_cliffs (dict): Results on activity cliffs of the dataset subset.
+        results_non_cliffs (dict): Results on non-cliff molecules of the dataset subset.
+        save_to_csv (bool): Whether to save results to a CSV file.
+        model_name (string): Name of the trained model, used for naming the CSV file.
+    """
 
     if save_to_csv:
         header = [
@@ -530,6 +548,14 @@ def print_save_results(set_name, results, results_cliffs, results_non_cliffs, sa
 
 
 def save_results_test_cliff_groups(cliff_group_results, model_name):
+    """
+    Save results on all cliff groups of the test set to a CSV file.
+
+    Parameters:
+        cliff_group_results (dict): Results on cliff groups of the test set.
+        model_name (string): Name of the trained model, used for naming the CSV file.
+    """
+
     data = []
 
     for i, results in cliff_group_results.items():
@@ -564,8 +590,17 @@ def save_results_test_cliff_groups(cliff_group_results, model_name):
         writer.writerow(header)
         writer.writerows(data)
 
-# TODO: merge this function with save_results_test_cliff_groups
+
 def save_results_test_clusters(clusters_results, model_name, cliff_text):
+    """
+    Save results on clusters of the test set to a CSV file.
+
+    Parameters:
+        clusters_results (dict): Results on clusters of the test set.
+        model_name (string): Name of the trained model, used for naming the CSV file.
+        cliff_text (string): Subset of test set ('', '_Cliffs', ...), used for naming the CSV file.
+    """
+
     data = []
 
     for i, results in clusters_results.items():
@@ -601,9 +636,19 @@ def save_results_test_clusters(clusters_results, model_name, cliff_text):
         writer.writerows(data)
 
 
-
 def compute_bce_loss_per_datapoint(loader, network, train_loader=False, rf=False):
-    # TODO: add docstring
+    """
+    Computes the BCE Loss on each datapoint separately
+
+    Parameters:
+        loader (torch.utils.data.DataLoader): DataLoader with data to evaluate the network on.
+        network (MLP or RandomForestClassifier): Trained network to be evaluated. 
+        train_loader (bool): Whether loader is the train loader.
+        rf (bool): Whether the network is a RandomForestClassifier. 
+
+    Returns:
+        np.ndarray: Array of computed losses per sample.
+    """
 
     if not rf:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -633,11 +678,11 @@ def compute_bce_loss_per_datapoint(loader, network, train_loader=False, rf=False
                 outputs_total, targets_total)
 
             return np.array([loss.item() for loss in losses])
-        
+
     else:
         X = []
         y = []
-        
+
         for batch in loader:
             if not train_loader or not use_contrastive_learning:
                 samples, targets = batch
@@ -652,20 +697,26 @@ def compute_bce_loss_per_datapoint(loader, network, train_loader=False, rf=False
 
         X_np = np.array(X)
         y_np = np.array(y).astype(float)
-        
+
         probas = network.predict_proba(X_np)[:, 1]
-        
+
         per_sample_loss = []
         for true_label, prob in zip(y_np, probas):
             loss = log_loss([true_label], [prob], labels=[0, 1])
             per_sample_loss.append(loss)
-            
+
         return np.array(per_sample_loss)
 
 
-
 def save_mean_loss_test_per_datapoint(loss_data, model_name, cliff_text):
-    # TODO: add docstring
+    """
+    Save computed BCE Loss values on each datapoint of the test set to a CSV file.
+
+    Parameters:
+        loss_data (list): List of results per datapoint (np.ndarray) of multiple differently seeded runs.
+        model_name (string): Name of the trained model, used for naming the CSV file.
+        cliff_text (string): Subset of test set ('', '_Cliffs', ...), used for naming the CSV file.
+    """
 
     losses = np.array(loss_data)
     mean_loss_per_datapoint = np.mean(losses, axis=0)
@@ -687,14 +738,15 @@ def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train
 
     Parameters:
         loader (torch.utils.data.DataLoader): DataLoader with data to evaluate network on.
-        network (torch.nn.Module): Network to be evaluated. TODO: add RF
+        network (MLP or RandomForestClassifier): Network to be evaluated.
         loss_function (Callable): Loss function to be used for loss computation.
         train_loader (bool): Whether given loader is a Train loader.
-        TODO: add RF
+        rf (bool): Whether the network is a RandomForestClassifier. 
 
     Returns:
-        various metrics (float)
+        pandas.DataFrame: Various metrics.
     """
+
     if not rf:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         network.eval()
@@ -779,9 +831,12 @@ def compute_metrics(loader, network, loss_function=nn.BCEWithLogitsLoss(), train
 
 
 def create_sweep_config():
-    # TODO: create docstring
+    """
+    Creates a sweep configuration dictionary for Weights & Biases hyperparameter tuning.
 
-    # https://docs.wandb.ai/guides/sweeps/sweep-config-keys
+    Returns:
+        dict: sweep configuration.
+    """
 
     sweep_config = {
         'method': 'bayes'
@@ -837,12 +892,13 @@ def create_sweep_config():
     return sweep_config
 
 
-# def run_sweep(sweep_id, fcn, count):
-#     # TODO: create docstring
-#     wandb.agent(sweep_id, function=fcn, count=count)
-
-
 def run_sweep_multiple_seeds(config=None):
+    """
+    Runs a Weights & Biases sweep experiment over multiple random seeds.
+
+    Parameters:
+        config (dict): Configuration dictionary for the sweep.
+    """
 
     if use_contrastive_learning:
         if use_cosine_sim:
@@ -863,29 +919,23 @@ def run_sweep_multiple_seeds(config=None):
 
     for current_seed in [7, 12, 39, 68, 94]:
 
-        # np.random.seed(current_seed)
-        # random.seed(current_seed)
-        # torch.manual_seed(current_seed)
-        # torch.random.manual_seed(current_seed)
-
-        # sweep_config["parameters"]["current_seed"] = {"value": current_seed}
         wandb.config.update({"current_seed": current_seed},
                             allow_val_change=True)
 
         train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = build_dataset(
-            wandb.config['batch_size'], seed=current_seed, use_contrastive_learning=False)
+            wandb.config['batch_size'], use_contrastive_learning=False)
 
-        # network, train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = train_wandb(
-        #     wandb.config)
         network = train_wandb(wandb.config)
 
         val_results = compute_metrics(val_loader, network, rf=train_eval_rf)
-        val_cliffs_results = compute_metrics(val_loader_cliffs, network, rf=train_eval_rf)
+        val_cliffs_results = compute_metrics(
+            val_loader_cliffs, network, rf=train_eval_rf)
         val_non_cliffs_results = compute_metrics(
             val_loader_non_cliffs, network, rf=train_eval_rf)
 
         test_results = compute_metrics(test_loader, network, rf=train_eval_rf)
-        test_cliffs_results = compute_metrics(test_loader_cliffs, network, rf=train_eval_rf)
+        test_cliffs_results = compute_metrics(
+            test_loader_cliffs, network, rf=train_eval_rf)
         test_non_cliffs_results = compute_metrics(
             test_loader_non_cliffs, network, rf=train_eval_rf)
 
@@ -917,27 +967,23 @@ def run_sweep_multiple_seeds(config=None):
     run.finish()
 
 
+# ********************************************************************************************************************
+# ---------------------------------------------- TRAINING CONFIGURATION ----------------------------------------------
 perform_add_preprocessing = False
+tune_wandb = False
 
-# CHEMBL214_Ki, 3317 entries (tuned)
-# CHEMBL233_Ki, 3142 entries
-# CHEMBL234_Ki, 3657 entries (tuned, main dataset)
-# CHEMBL244_Ki, 3097 entries
-# CHEMBL264_Ki, 2862 entries
+# choose from: 'CHEMBL234_Ki', 'CHEMBL214_Ki'
 dataset_folder = "CHEMBL234_Ki"
+
+train_eval_rf = False
+use_contrastive_learning = False
+use_cosine_sim = True
+
+# ********************************************************************************************************************
+
 
 df, df_train, df_val, df_test = preprocessing.preprocess_data(
     perform_add_preprocessing, dataset_folder=dataset_folder)
-
-tune_wandb = False
-
-train_eval_rf = False
-
-# choose from: 'MLP', 'MLP Triplet Manhattan', 'MLP Triplet Cosine', None
-load_model = None  # from seed-run 12
-
-use_contrastive_learning = True
-use_cosine_sim = True
 
 train_losses_total = []
 train_triplet_losses = []
@@ -957,7 +1003,7 @@ all_configs = {
             'activation_function': 'selu',
             'input_dropout': 0.1,
             'dropout': 0.3,
-            'alpha': 1.3461  # TODO: check if alpha doesnt do anything!
+            'alpha': 0
         },
         {  # MLP Manhattan
             'optimizer': 'adam',
@@ -996,7 +1042,7 @@ all_configs = {
             'activation_function': 'selu',
             'input_dropout': 0.1,
             'dropout': 0.1,
-            'alpha': 0.4286
+            'alpha': 0
         },
         {  # MLP Manhattan
             'optimizer': 'adam',
@@ -1031,28 +1077,27 @@ if __name__ == "__main__":
     if tune_wandb:
         wandb.login()
         sweep_config = create_sweep_config()
-        # sweep_id = wandb.sweep(sweep_config, project="ActivityCliffs")
-        sweep_id = "uom9tt5r"
+        sweep_id = wandb.sweep(sweep_config, project="")
 
-        run_sweep(sweep_id, run_sweep_multiple_seeds, 15)
+        run_sweep(sweep_id, run_sweep_multiple_seeds,
+                  15, project="", entity="")
 
     else:
 
         configs = all_configs[dataset_folder]
 
-        if (not load_model):
-            if (train_eval_rf):
-                model_name = "RF"
-                config_dict = {'batch_size': 128}
-            elif (use_contrastive_learning and use_cosine_sim):
-                model_name = "MLP_Cosine"
-                config_dict = configs[2]
-            elif (use_contrastive_learning and not use_cosine_sim):
-                model_name = "MLP_Manhattan"
-                config_dict = configs[1]
-            else:
-                model_name = "MLP_BCE"
-                config_dict = configs[0]
+        if (train_eval_rf):
+            model_name = "RF"
+            config_dict = {'batch_size': 128}
+        elif (use_contrastive_learning and use_cosine_sim):
+            model_name = "MLP_Cosine"
+            config_dict = configs[2]
+        elif (use_contrastive_learning and not use_cosine_sim):
+            model_name = "MLP_Manhattan"
+            config_dict = configs[1]
+        else:
+            model_name = "MLP_BCE"
+            config_dict = configs[0]
 
         val_results_list = []
         val_cliffs_results_list = []
@@ -1069,7 +1114,8 @@ if __name__ == "__main__":
         test_results_per_cluster_cliffs_list = dict()
         test_results_per_cluster_non_cliffs_list = dict()
 
-        lables_clustering = np.load(f"results/{dataset_folder}/Clustering_Labels.npy")
+        lables_clustering = np.load(
+            f"results/{dataset_folder}/Clustering_Labels.npy")
 
         # extract cliff groups of test set
         group_dict = preprocessing.get_cliff_groups_test(
@@ -1089,27 +1135,16 @@ if __name__ == "__main__":
         for current_seed in [7, 12, 39, 68, 94]:
 
             train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs, test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs = build_dataset(
-                config_dict['batch_size'], seed=current_seed, use_contrastive_learning=False)
+                config_dict['batch_size'], use_contrastive_learning=False)
             if train_eval_rf:
                 network, val_results, val_cliffs_results, val_non_cliffs_results, test_results, test_cliffs_results, test_non_cliffs_results = train_rf(train_loader, val_loader, test_loader, train_loader_cliffs, val_loader_cliffs,
-                                                                                                                                               test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs)
+                                                                                                                                                        test_loader_cliffs, train_loader_non_cliffs, val_loader_non_cliffs, test_loader_non_cliffs)
             else:
-                if load_model is None:
-                    network = train(
-                        config_dict, use_contrastive_learning=use_contrastive_learning, use_cosine_sim=use_cosine_sim, seed=current_seed)
-                elif load_model == 'MLP':
-                    network = torch.load(
-                        'models/' + dataset_folder + '/baseline_mlp.pt', weights_only=False)
-                elif load_model == 'MLP Triplet Manhattan':
-                    network = torch.load(
-                        'models/' + dataset_folder + '/mlp_triplet_manhattan.pt', weights_only=False)
-                elif load_model == 'MLP Triplet Cosine':
-                    network = torch.load(
-                        'models/' + dataset_folder + '/mlp_triplet_cosine.pt', weights_only=False)
-                else:
-                    raise Exception("invalid flag combination")
+                network = train(config_dict, use_contrastive_learning=use_contrastive_learning,
+                                use_cosine_sim=use_cosine_sim, seed=current_seed)
 
-                val_results = compute_metrics(val_loader, network, rf=train_eval_rf)
+                val_results = compute_metrics(
+                    val_loader, network, rf=train_eval_rf)
                 val_cliffs_results = compute_metrics(
                     val_loader_cliffs, network, rf=train_eval_rf)
                 val_non_cliffs_results = compute_metrics(
@@ -1120,7 +1155,7 @@ if __name__ == "__main__":
                     test_loader_cliffs, network, rf=train_eval_rf)
                 test_non_cliffs_results = compute_metrics(
                     test_loader_non_cliffs, network, rf=train_eval_rf)
-                
+
                 torch.save(network, 'models/' + dataset_folder + '/' +
                            model_name + "_seed" + str(current_seed) + ".pt")
 
@@ -1131,54 +1166,59 @@ if __name__ == "__main__":
             test_loss_per_datapoint_non_cliffs_list.append(
                 compute_bce_loss_per_datapoint(test_loader_non_cliffs, network, rf=train_eval_rf))
 
-            if True:#not train_eval_rf:
-                for i in range(min(df_test_groups['cliff_group']), max(df_test_groups['cliff_group']) + 1):
-                    if (i not in cliff_group_results):
-                        cliff_group_results[i] = []
+            for i in range(min(df_test_groups['cliff_group']), max(df_test_groups['cliff_group']) + 1):
+                if (i not in cliff_group_results):
+                    cliff_group_results[i] = []
 
-                    filtered_df = df_test_groups[df_test_groups['cliff_group'] == i]
-                    dataset = MoleculeACEDataset(
-                        filtered_df['ecfp'], filtered_df['active'])
-                    loader = DataLoader(dataset, shuffle=True,
-                                        batch_size=config_dict['batch_size'])
-                    results = compute_metrics(loader, network, rf=train_eval_rf)
-                    cliff_group_results[i].append(results)
+                filtered_df = df_test_groups[df_test_groups['cliff_group'] == i]
+                dataset = MoleculeACEDataset(
+                    filtered_df['ecfp'], filtered_df['active'])
+                loader = DataLoader(dataset, shuffle=True,
+                                    batch_size=config_dict['batch_size'])
+                results = compute_metrics(
+                    loader, network, rf=train_eval_rf)
+                cliff_group_results[i].append(results)
 
-                for cluster_id in set(lables_clustering):
-                    if (cluster_id not in test_results_per_cluster_list):
-                        test_results_per_cluster_list[cluster_id] = []
+            for cluster_id in set(lables_clustering):
+                if (cluster_id not in test_results_per_cluster_list):
+                    test_results_per_cluster_list[cluster_id] = []
 
-                    df_curr_cluster = df_test.iloc[np.where(lables_clustering == cluster_id)]
-                    dataset = MoleculeACEDataset(
-                        df_curr_cluster['ecfp'], df_curr_cluster['active'])
-                    loader = DataLoader(dataset, shuffle=True,
-                                        batch_size=config_dict['batch_size'])
-                    results = compute_metrics(loader, network, rf=train_eval_rf)
-                    test_results_per_cluster_list[cluster_id].append(results)
+                df_curr_cluster = df_test.iloc[np.where(
+                    lables_clustering == cluster_id)]
+                dataset = MoleculeACEDataset(
+                    df_curr_cluster['ecfp'], df_curr_cluster['active'])
+                loader = DataLoader(dataset, shuffle=True,
+                                    batch_size=config_dict['batch_size'])
+                results = compute_metrics(
+                    loader, network, rf=train_eval_rf)
+                test_results_per_cluster_list[cluster_id].append(results)
 
+                if (cluster_id not in test_results_per_cluster_cliffs_list):
+                    test_results_per_cluster_cliffs_list[cluster_id] = []
 
-                    if (cluster_id not in test_results_per_cluster_cliffs_list):
-                        test_results_per_cluster_cliffs_list[cluster_id] = []
+                df_filtered = df_curr_cluster[df_curr_cluster["cliff_mol_binary"] == 1]
+                dataset = MoleculeACEDataset(
+                    df_filtered['ecfp'], df_filtered['active'])
+                loader = DataLoader(dataset, shuffle=True,
+                                    batch_size=config_dict['batch_size'])
+                results = compute_metrics(
+                    loader, network, rf=train_eval_rf)
+                test_results_per_cluster_cliffs_list[cluster_id].append(
+                    results)
 
-                    df_filtered = df_curr_cluster[df_curr_cluster["cliff_mol_binary"] == 1]
-                    dataset = MoleculeACEDataset(
-                        df_filtered['ecfp'], df_filtered['active'])
-                    loader = DataLoader(dataset, shuffle=True,
-                                        batch_size=config_dict['batch_size'])
-                    results = compute_metrics(loader, network, rf=train_eval_rf)
-                    test_results_per_cluster_cliffs_list[cluster_id].append(results)       
+                if (cluster_id not in test_results_per_cluster_non_cliffs_list):
+                    test_results_per_cluster_non_cliffs_list[cluster_id] = [
+                    ]
 
-                    if (cluster_id not in test_results_per_cluster_non_cliffs_list):
-                        test_results_per_cluster_non_cliffs_list[cluster_id] = []
-
-                    df_filtered = df_curr_cluster[df_curr_cluster["cliff_mol_binary"] == 0]
-                    dataset = MoleculeACEDataset(
-                        df_filtered['ecfp'], df_filtered['active'])
-                    loader = DataLoader(dataset, shuffle=True,
-                                        batch_size=config_dict['batch_size'])
-                    results = compute_metrics(loader, network, rf=train_eval_rf)
-                    test_results_per_cluster_non_cliffs_list[cluster_id].append(results)               
-
+                df_filtered = df_curr_cluster[df_curr_cluster["cliff_mol_binary"] == 0]
+                dataset = MoleculeACEDataset(
+                    df_filtered['ecfp'], df_filtered['active'])
+                loader = DataLoader(dataset, shuffle=True,
+                                    batch_size=config_dict['batch_size'])
+                results = compute_metrics(
+                    loader, network, rf=train_eval_rf)
+                test_results_per_cluster_non_cliffs_list[cluster_id].append(
+                    results)
 
             val_results_list.append(val_results)
             val_cliffs_results_list.append(val_cliffs_results)
@@ -1207,39 +1247,19 @@ if __name__ == "__main__":
         print_save_results("Test", cumulated_test_results,
                            cumulated_test_cliffs_results, cumulated_test_non_cliffs_results, save_to_csv=True, model_name=model_name)
 
-        if True:#not train_eval_rf:
-            save_results_test_cliff_groups(
-                cliff_group_results, model_name=model_name)
+        save_results_test_cliff_groups(
+            cliff_group_results, model_name=model_name)
 
-            save_mean_loss_test_per_datapoint(
-                test_loss_per_datapoint_list, cliff_text="", model_name=model_name)
-            save_mean_loss_test_per_datapoint(
-                test_loss_per_datapoint_cliffs_list, cliff_text="_Cliffs", model_name=model_name)
-            save_mean_loss_test_per_datapoint(
-                test_loss_per_datapoint_non_cliffs_list, cliff_text="_Non_Cliffs", model_name=model_name)
-            
-            save_results_test_clusters(
-                test_results_per_cluster_list, model_name=model_name, cliff_text="")
-            save_results_test_clusters(
-                test_results_per_cluster_cliffs_list, model_name=model_name, cliff_text="_Cliffs")
-            save_results_test_clusters(
-                test_results_per_cluster_non_cliffs_list, model_name=model_name, cliff_text="_Non_Cliffs")
+        save_mean_loss_test_per_datapoint(
+            test_loss_per_datapoint_list, cliff_text="", model_name=model_name)
+        save_mean_loss_test_per_datapoint(
+            test_loss_per_datapoint_cliffs_list, cliff_text="_Cliffs", model_name=model_name)
+        save_mean_loss_test_per_datapoint(
+            test_loss_per_datapoint_non_cliffs_list, cliff_text="_Non_Cliffs", model_name=model_name)
 
-        if False:
-            # if load_model is None and not train_eval_rf:
-            fig, axes = plt.subplots(2, 2, figsize=(10, 7))
-
-            axes[0, 0].plot(train_losses_total)
-            axes[0, 0].set_title('Total Train Losses')
-
-            axes[0, 1].plot(val_losses)
-            axes[0, 1].set_title('Validation Losses (BCE)')
-
-            axes[1, 0].plot(train_basic_losses)
-            axes[1, 0].set_title('BCE Losses Train')
-
-            axes[1, 1].plot(train_triplet_losses)
-            axes[1, 1].set_title('Triplet Losses Train')
-
-            plt.tight_layout()
-            plt.show()
+        save_results_test_clusters(
+            test_results_per_cluster_list, model_name=model_name, cliff_text="")
+        save_results_test_clusters(
+            test_results_per_cluster_cliffs_list, model_name=model_name, cliff_text="_Cliffs")
+        save_results_test_clusters(
+            test_results_per_cluster_non_cliffs_list, model_name=model_name, cliff_text="_Non_Cliffs")

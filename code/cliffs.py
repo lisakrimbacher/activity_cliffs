@@ -25,7 +25,8 @@ Software.
 
 ----------------------------------------------------------------------------------------------------------------------------
 
-The Code has been altered to include the possiblity of binary activity labels (Lisa Krimbacher, 23-11-2024).
+The code (taken from https://github.com/molML/MoleculeACE/tree/main/MoleculeACE/benchmark) has been altered to include the 
+possiblity of binary activity labels (Lisa Krimbacher, 23-11-2024).
 
 """
 

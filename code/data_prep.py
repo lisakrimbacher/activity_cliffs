@@ -17,6 +17,11 @@ persons to whom the Software is furnished to do so, subject to the following con
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
 Software.
 
+----------------------------------------------------------------------------------------------------------------------------
+
+The code file (taken from https://github.com/molML/MoleculeACE/tree/main/MoleculeACE/benchmark) has been shortened to only 
+include functions used in this project. (Lisa Krimbacher, 23-11-2024).
+
 """
 
 from cliffs import ActivityCliffs, get_tanimoto_matrix
